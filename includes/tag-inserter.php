@@ -57,5 +57,35 @@ function ati_output_tags() {
         <!-- End Google Analytics 4 -->
         <?php
     }
+
+    $gtm_enabled = get_option( 'ati_enable_gtm', false );
+    $gtm_id      = trim( get_option( 'ati_gtm_id', '' ) );
+
+    if ( $gtm_enabled && ! empty( $gtm_id ) ) {
+        ?>
+        <!-- Google Tag Manager -->
+        <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+        new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+        j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+        'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+        })(window,document,'script','dataLayer','<?php echo esc_js( $gtm_id ); ?>');</script>
+        <!-- End Google Tag Manager -->
+        <?php
+    }
 }
 add_action( 'wp_head', 'ati_output_tags' );
+
+/**
+ * Output Google Tag Manager noscript after <body> tag.
+ */
+function ati_output_gtm_noscript() {
+    $gtm_enabled = get_option( 'ati_enable_gtm', false );
+    $gtm_id      = trim( get_option( 'ati_gtm_id', '' ) );
+
+    if ( $gtm_enabled && ! empty( $gtm_id ) ) {
+        echo "<!-- Google Tag Manager (noscript) -->\n";
+        echo '<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=' . esc_attr( $gtm_id ) . '" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>' . "\n";
+        echo "<!-- End Google Tag Manager (noscript) -->\n";
+    }
+}
+add_action( 'wp_body_open', 'ati_output_gtm_noscript' );

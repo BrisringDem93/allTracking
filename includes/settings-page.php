@@ -13,8 +13,10 @@ if ( ! defined( 'ABSPATH' ) ) {
 function ati_register_settings() {
     register_setting( 'ati_settings', 'ati_fb_pixel_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_ga4_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+    register_setting( 'ati_settings', 'ati_gtm_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_enable_fb', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_enable_ga4', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+    register_setting( 'ati_settings', 'ati_enable_gtm', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_disable_logged_in', array( 'sanitize_callback' => 'sanitize_text_field' ) );
 }
 add_action( 'admin_init', 'ati_register_settings' );
@@ -51,10 +53,15 @@ function ati_settings_page() {
                     <td><input name="ati_ga4_id" type="password" id="ati_ga4_id" value="<?php echo esc_attr( get_option( 'ati_ga4_id', '' ) ); ?>" class="regular-text" /></td>
                 </tr>
                 <tr>
+                    <th scope="row"><label for="ati_gtm_id">Google Tag Manager ID</label></th>
+                    <td><input name="ati_gtm_id" type="text" id="ati_gtm_id" value="<?php echo esc_attr( get_option( 'ati_gtm_id', '' ) ); ?>" class="regular-text" /></td>
+                </tr>
+                <tr>
                     <th scope="row">&nbsp;</th>
                     <td>
                         <label><input type="checkbox" name="ati_enable_fb" value="1" <?php checked( get_option( 'ati_enable_fb', false ), '1' ); ?> /> <?php esc_html_e( 'Attiva Facebook Pixel', 'ati' ); ?></label><br />
                         <label><input type="checkbox" name="ati_enable_ga4" value="1" <?php checked( get_option( 'ati_enable_ga4', false ), '1' ); ?> /> <?php esc_html_e( 'Attiva GA4', 'ati' ); ?></label><br />
+                        <label><input type="checkbox" name="ati_enable_gtm" value="1" <?php checked( get_option( 'ati_enable_gtm', false ), '1' ); ?> /> <?php esc_html_e( 'Attiva Google Tag Manager', 'ati' ); ?></label><br />
                         <label><input type="checkbox" name="ati_disable_logged_in" value="1" <?php checked( get_option( 'ati_disable_logged_in', false ), '1' ); ?> /> <?php esc_html_e( 'Disattiva per utenti loggati', 'ati' ); ?></label>
                     </td>
                 </tr>
