@@ -1,8 +1,15 @@
 <?php
+/**
+ * Plugin Name: FB Event Tracker
+ * Description: Traccia gli eventi del sito e li invia a Facebook Graph API.
+ * Version: 0.1
+ * Author: Your Name
+ */
 
-// Adjust the path to wp-load.php according to your WordPress installation.
-require_once __DIR__ . '/wp-load.php';
+// Sicurezza
+if (!defined('ABSPATH')) {
+    exit;
+}
 
-// Load the plugin file directly in case it's not activated via WordPress.
-require_once __DIR__ . '/fb-event-tracker/fb-event-tracker.php';
-
+// Includi la logica del plugin
+require_once plugin_dir_path(__FILE__) . 'fb-event-tracker/fb-event-tracker.php';

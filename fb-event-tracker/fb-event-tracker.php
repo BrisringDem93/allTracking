@@ -1,14 +1,11 @@
 <?php
-/**
- * Plugin Name: FB Event Tracker
- * Description: Traccia gli eventi del sito e li invia a Facebook Graph API.
- * Version: 0.1
- * Author: Your Name
- */
 
 if (!defined('ABSPATH')) {
     exit; // Exit if accessed directly
 }
+
+// Tutto il resto del tuo codice qui rimane identico (già perfetto)
+
 
 function fb_event_tracker_add_menu() {
     add_menu_page(
