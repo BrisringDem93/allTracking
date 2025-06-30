@@ -1,12 +1,11 @@
-# allTracking
+# Quick Tracking Integration
 
-Un semplice plugin WordPress per tracciare gli eventi e inviarli alla Facebook Graph API.
+Un plugin WordPress che consente di installare rapidamente Facebook Pixel e Google Analytics 4 senza toccare il codice.
 
 ## Installazione
 
-1. Copia la cartella `fb-event-tracker` all'interno della directory `wp-content/plugins` del tuo sito WordPress.
-2. Attiva il plugin dal pannello di amministrazione di WordPress.
-3. Dal menu "FB Event Tracker" inserisci il token API e l'ID del pixel forniti da Facebook.
-4. Scegli se inviare gli eventi direttamente a Facebook o al tuo Tag Manager.
+1. Copia la cartella del plugin nella directory `wp-content/plugins` del tuo sito WordPress.
+2. Attiva il plugin dal pannello di amministrazione.
+3. Apri la pagina **Tracking Integration** nelle impostazioni e inserisci gli ID richiesti.
 
-Il plugin, una volta configurato, invierà automaticamente un evento `PageView` ad ogni caricamento di pagina (solo se token e Pixel ID sono impostati).
+Il plugin aggiungerà automaticamente i tag nel `<head>` del sito secondo le opzioni selezionate.
