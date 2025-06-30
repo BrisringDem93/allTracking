@@ -1,9 +1,9 @@
 <?php
 /**
- * Plugin Name: FB Event Tracker
+ * Plugin Name: All  Event Tracker
  * Description: Traccia gli eventi del sito e li invia a Facebook Graph API.
  * Version: 0.1
- * Author: Your Name
+ * Author: Francesco de Minicis
  */
 
 // Sicurezza
