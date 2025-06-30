@@ -37,8 +37,21 @@ function fb_event_tracker_settings_page() {
 }
 
 function fb_event_tracker_settings_init() {
-    register_setting('fb_event_tracker_settings', 'fb_event_tracker_token');
-    register_setting('fb_event_tracker_settings', 'fb_event_tracker_pixel_id');
+    register_setting(
+        'fb_event_tracker_settings',
+        'fb_event_tracker_token',
+        array('sanitize_callback' => 'sanitize_text_field')
+    );
+    register_setting(
+        'fb_event_tracker_settings',
+        'fb_event_tracker_pixel_id',
+        array('sanitize_callback' => 'sanitize_text_field')
+    );
+    register_setting(
+        'fb_event_tracker_settings',
+        'fb_event_tracker_destination',
+        array('sanitize_callback' => 'sanitize_text_field')
+    );
 
     add_settings_section(
         'fb_event_tracker_section',
@@ -62,6 +75,14 @@ function fb_event_tracker_settings_init() {
         'fb_event_tracker',
         'fb_event_tracker_section'
     );
+
+    add_settings_field(
+        'fb_event_tracker_destination',
+        __('Invia eventi a', 'fb-event-tracker'),
+        'fb_event_tracker_destination_render',
+        'fb_event_tracker',
+        'fb_event_tracker_section'
+    );
 }
 add_action('admin_init', 'fb_event_tracker_settings_init');
 
@@ -75,11 +96,34 @@ function fb_event_tracker_pixel_id_render() {
     echo '<input type="text" name="fb_event_tracker_pixel_id" value="' . $value . '" class="regular-text">';
 }
 
+function fb_event_tracker_destination_render() {
+    $value = esc_attr(get_option('fb_event_tracker_destination', 'facebook'));
+    ?>
+    <select name="fb_event_tracker_destination">
+        <option value="facebook" <?php selected($value, 'facebook'); ?>>Facebook</option>
+        <option value="tag_manager" <?php selected($value, 'tag_manager'); ?>>Tag Manager</option>
+    </select>
+    <?php
+}
+
 function fb_event_tracker_send_event($event_name, $event_data = array()) {
-    $token = get_option('fb_event_tracker_token');
-    $pixel_id = get_option('fb_event_tracker_pixel_id');
+    $token      = get_option('fb_event_tracker_token');
+    $pixel_id   = get_option('fb_event_tracker_pixel_id');
+    $dest       = get_option('fb_event_tracker_destination', 'facebook');
 
     if (!$token || !$pixel_id) {
+        return;
+    }
+
+    $payload = array(
+        'event_name'       => $event_name,
+        'event_time'       => time(),
+        'event_source_url' => home_url($_SERVER['REQUEST_URI']),
+        'action_source'    => 'website',
+    );
+
+    if ($dest === 'tag_manager') {
+        echo '<script>window.dataLayer = window.dataLayer || [];window.dataLayer.push(' . wp_json_encode(array_merge($payload, $event_data)) . ');</script>';
         return;
     }
 
@@ -87,22 +131,30 @@ function fb_event_tracker_send_event($event_name, $event_data = array()) {
 
     $payload = array(
         'data' => array(
-            array_merge(array(
-                'event_name' => $event_name,
-                'event_time' => time(),
-                'event_source_url' => home_url($_SERVER['REQUEST_URI']),
-                'action_source' => 'website',
-            ), $event_data)
+            array_merge(
+                $payload,
+                $event_data
+            )
         )
     );
 
     wp_remote_post($url, array(
         'headers' => array('Content-Type' => 'application/json'),
         'body'    => wp_json_encode($payload),
+        'blocking' => false,
     ));
 }
 
 function fb_event_tracker_page_view() {
     fb_event_tracker_send_event('PageView');
 }
-add_action('wp_footer', 'fb_event_tracker_page_view');
+
+function fb_event_tracker_maybe_hook_page_view() {
+    $token    = get_option('fb_event_tracker_token');
+    $pixel_id = get_option('fb_event_tracker_pixel_id');
+
+    if ($token && $pixel_id) {
+        add_action('wp_footer', 'fb_event_tracker_page_view');
+    }
+}
+add_action('init', 'fb_event_tracker_maybe_hook_page_view');
