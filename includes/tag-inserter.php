@@ -32,7 +32,6 @@ function ati_output_tags() {
         s.parentNode.insertBefore(t,s)}(window, document,'script',
         'https://connect.facebook.net/en_US/fbevents.js');
         fbq('init', '<?php echo esc_js( $fb_pixel_id ); ?>');
-        fbq('track', 'PageView');
         </script>
         <noscript>
             <img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=<?php echo esc_attr( $fb_pixel_id ); ?>&ev=PageView&noscript=1" />
@@ -96,20 +95,42 @@ function fst_inline_tracking_js() { ?>
 <script>
 (function () {
   const endpoint = '<?php echo esc_js( home_url( '/wp-json/fst/v1/event' ) ); ?>';
+  function getEventId() {
+    const m = document.cookie.match(/(?:^|; )fst_ev_id=([^;]+)/);
+    if (m) return decodeURIComponent(m[1]);
+    const id = 'evt_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    document.cookie = 'fst_ev_id=' + encodeURIComponent(id) +
+      '; path=/; max-age=3600; SameSite=Lax';
+    return id;
+  }
+  function clearEventId() {
+    document.cookie = 'fst_ev_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+  }
+  function sendEvent(payload) {
+    payload.eventID = getEventId();
+    fetch(endpoint, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify(payload)
+    }).finally(clearEventId);
+    return payload.eventID;
+  }
+
+  const pageViewID = getEventId();
+  if (window.fbq) {
+    fbq('track', 'PageView', {}, {eventID: pageViewID});
+  }
+  clearEventId();
 
   /* BUTTON CLICK */
   document.addEventListener('click', e => {
     const btn = e.target.closest('button, a');
     if (!btn) return;
     console.log('[FST] ButtonClick', btn);
-    fetch(endpoint, {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({
-        type : 'ButtonClick',
-        label: btn.id || btn.textContent.trim().slice(0,80),
-        page : window.location.href
-      })
+    sendEvent({
+      type : 'ButtonClick',
+      label: btn.id || btn.textContent.trim().slice(0,80),
+      page : window.location.href
     });
   });
 
@@ -119,14 +140,10 @@ function fst_inline_tracking_js() { ?>
     if (!form || form.fstStarted) return;
     form.fstStarted = true;
     console.log('[FST] FormStart', form);
-    fetch(endpoint, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        type :'FormStart',
-        label: form.id || form.action || 'generic',
-        page : window.location.href
-      })
+    sendEvent({
+      type :'FormStart',
+      label: form.id || form.action || 'generic',
+      page : window.location.href
     });
   });
 
@@ -134,14 +151,10 @@ function fst_inline_tracking_js() { ?>
   document.addEventListener('submit', e => {
     const form = e.target;
     console.log('[FST] FormSubmit', form);
-    fetch(endpoint, {
-      method:'POST',
-      headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({
-        type :'FormSubmit',
-        label: form.id || form.action || 'generic',
-        page : window.location.href
-      })
+    sendEvent({
+      type :'FormSubmit',
+      label: form.id || form.action || 'generic',
+      page : window.location.href
     });
   });
 })();

@@ -9,11 +9,13 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// 1. PAGEVIEW – ricevuto dal client via REST usa stesso eventID per deduplicazione
-// Rimuoviamo il template_redirect diretto per PageView
-// Ora la PageView viene inviata dal client JS come REST call a fst/v1/event
+// 1. PAGEVIEW – spedito dal server ad ogni page load e deduplicato con il Pixel
+add_action( 'template_redirect', 'fst_track_pageview', 1 );
+function fst_track_pageview() {
+    if ( is_admin() || wp_doing_ajax() ) {
+        return;
+    }
 
-    // Genera o recupera eventID univoco e imposta cookie
     $event_id = fst_get_event_id();
 
     $event = [
@@ -82,6 +84,8 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
         fst_send_to_ga4( strtolower( $type ), [ 'label' => $label ] );
     }
 
+    fst_clear_event_id();
+
     return rest_ensure_response( [ 'status' => 'ok', 'event_id' => $event_id ] );
 }
 
@@ -115,6 +119,11 @@ function fst_get_event_id() {
     $eid = 'evt_' . time() . '_' . wp_generate_uuid4();
     setcookie( $cookie, $eid, time() + 3600, COOKIEPATH, COOKIE_DOMAIN );
     return $eid;
+}
+
+// Cancella l'eventID dopo l'uso
+function fst_clear_event_id() {
+    setcookie( 'fst_ev_id', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN );
 }
 
 // 5. Invio a n8n con debug dettagliato
