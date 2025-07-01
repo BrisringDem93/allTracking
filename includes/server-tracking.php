@@ -2,20 +2,16 @@
 /**
  * Tracciamento server-side per Pixel e GA4 (Measurement Protocol)
  * Eventi: PageView, ButtonClick, FormStart, FormSubmit
+ * File name: server-tracking.php
  */
 
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-
-/* -------------------------------------------------
- * 2. PAGEVIEW – spedito dal server ad ogni page load
- * ------------------------------------------------- */
+// 1. PAGEVIEW – spedito dal server ad ogni page load
 add_action( 'template_redirect', 'fst_track_pageview', 1 );
 function fst_track_pageview() {
-
-    // Evita AJAX & admin
     if ( is_admin() || wp_doing_ajax() ) {
         return;
     }
@@ -33,25 +29,25 @@ function fst_track_pageview() {
     ];
 
     fst_send_to_n8n( $event );
-    fst_send_to_ga4( 'page_view', [] ); // opzionale
+
+    if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
+        fst_send_to_ga4( 'page_view', [] );
+    }
 }
 
-/* -------------------------------------------------
- * 3. REST ENDPOINT per eventi da JavaScript
- * ------------------------------------------------- */
+// 2. REST API – per eventi JS (button click, form start, form submit)
 add_action( 'rest_api_init', function () {
     register_rest_route( 'fst/v1', '/event', [
         'methods'             => 'POST',
         'callback'            => 'fst_rest_event_handler',
-        'permission_callback' => '__return_true', // pubblica: non richiede auth
+        'permission_callback' => '__return_true',
     ] );
 } );
 
 function fst_rest_event_handler( WP_REST_Request $req ) {
-
-    $type   = sanitize_text_field( $req->get_param( 'type' ) );          // ButtonClick, FormStart, FormSubmit
-    $label  = sanitize_text_field( $req->get_param( 'label' ) );         // es. ID pulsante
-    $page   = esc_url_raw( $req->get_param( 'page' ) );
+    $type    = sanitize_text_field( $req->get_param( 'type' ) );
+    $label   = sanitize_text_field( $req->get_param( 'label' ) );
+    $page    = esc_url_raw( $req->get_param( 'page' ) );
     $eventID = uniqid( $type . '_', true );
 
     $event = [
@@ -68,21 +64,20 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
     ];
 
     fst_send_to_n8n( $event );
-    fst_send_to_ga4( strtolower( $type ), [ 'label' => $label ] );
+
+    if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
+        fst_send_to_ga4( strtolower( $type ), [ 'label' => $label ] );
+    }
 
     return rest_ensure_response( [ 'status' => 'ok', 'event_id' => $eventID ] );
 }
 
-/* -------------------------------------------------
- * 4. FUNZIONI DI INVIO
- * ------------------------------------------------- */
+// 3. Invio a n8n
 function fst_send_to_n8n( array $payload ) {
-
     $endpoint = get_option( 'ati_server_endpoint', '' );
     if ( empty( $endpoint ) ) return;
 
     $headers = [ 'Content-Type' => 'application/json' ];
-
     $auth_key = get_option( 'ati_server_auth_key', '' );
     $auth_val = get_option( 'ati_server_auth_value', '' );
 
@@ -101,9 +96,8 @@ function fst_send_to_n8n( array $payload ) {
     }
 }
 
-
+// 4. Invio a GA4 server-side via Measurement Protocol
 function fst_send_to_ga4( string $eventName, array $params = [] ) {
-
     $measurement_id = trim( get_option( 'ati_ga4_id', '' ) );
     $api_secret     = trim( get_option( 'ati_ga4_api_secret', '' ) );
 
@@ -131,11 +125,8 @@ function fst_send_to_ga4( string $eventName, array $params = [] ) {
     ] );
 }
 
-/* -------------------------------------------------
- * 5. CLIENT ID – cookie anonimo per GA4 server-side
- * ------------------------------------------------- */
+// 5. Gestione client_id per GA4 server-side
 function fst_get_client_id() {
-
     $cookie = 'fst_ga4_id';
     if ( isset( $_COOKIE[ $cookie ] ) ) {
         return sanitize_text_field( $_COOKIE[ $cookie ] );

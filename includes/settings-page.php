@@ -22,6 +22,7 @@ function ati_register_settings() {
     register_setting( 'ati_settings', 'ati_server_endpoint', array( 'sanitize_callback' => 'esc_url_raw' ) );
     register_setting( 'ati_settings', 'ati_server_auth_key', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_server_auth_value', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+    register_setting( 'ati_settings', 'ati_enable_ga4_server', array( 'sanitize_callback' => 'sanitize_text_field' ) );
 
 
 }
@@ -87,6 +88,11 @@ function ati_settings_page() {
     <th scope="row"><label for="ati_server_auth_value">Valore Header Autenticazione</label></th>
     <td><input name="ati_server_auth_value" type="password" id="ati_server_auth_value" value="<?php echo esc_attr( get_option( 'ati_server_auth_value', '' ) ); ?>" class="regular-text code" /></td>
 </tr>
+<label>
+    <input type="checkbox" name="ati_enable_ga4_server" value="1" <?php checked( get_option( 'ati_enable_ga4_server', false ), '1' ); ?> />
+    <?php esc_html_e( 'Invia eventi a GA4 anche da server (Measurement Protocol)', 'ati' ); ?>
+</label>
+
 
 
             </table>
