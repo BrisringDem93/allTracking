@@ -18,6 +18,11 @@ function ati_register_settings() {
     register_setting( 'ati_settings', 'ati_enable_ga4', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_enable_gtm', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_disable_logged_in', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+    register_setting( 'ati_settings', 'ati_server_endpoint', array( 'sanitize_callback' => 'esc_url_raw' ) );
+    register_setting( 'ati_settings', 'ati_server_auth_key', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+    register_setting( 'ati_settings', 'ati_server_auth_value', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+
+
 }
 add_action( 'admin_init', 'ati_register_settings' );
 
@@ -65,6 +70,20 @@ function ati_settings_page() {
                         <label><input type="checkbox" name="ati_disable_logged_in" value="1" <?php checked( get_option( 'ati_disable_logged_in', false ), '1' ); ?> /> <?php esc_html_e( 'Disattiva per utenti loggati', 'ati' ); ?></label>
                     </td>
                 </tr>
+                <tr>
+    <th scope="row"><label for="ati_server_endpoint">Endpoint server (es. n8n)</label></th>
+    <td><input name="ati_server_endpoint" type="url" id="ati_server_endpoint" value="<?php echo esc_attr( get_option( 'ati_server_endpoint', '' ) ); ?>" class="regular-text code" /></td>
+</tr>
+<tr>
+    <th scope="row"><label for="ati_auth_header_name">Chiave Header Autenticazione</label></th>
+    <td><input name="ati_auth_header_name" type="text" id="ati_auth_header_name" value="<?php echo esc_attr( get_option( 'ati_auth_header_name', '' ) ); ?>" class="regular-text code" /></td>
+</tr>
+<tr>
+    <th scope="row"><label for="ati_auth_header_value">Valore Header Autenticazione</label></th>
+    <td><input name="ati_auth_header_value" type="password" id="ati_auth_header_value" value="<?php echo esc_attr( get_option( 'ati_auth_header_value', '' ) ); ?>" class="regular-text code" /></td>
+</tr>
+
+
             </table>
             <?php submit_button(); ?>
         </form>

@@ -89,3 +89,58 @@ function ati_output_gtm_noscript() {
     }
 }
 add_action( 'wp_body_open', 'ati_output_gtm_noscript' );
+
+
+add_action( 'wp_footer', 'fst_inline_tracking_js', 100 );
+function fst_inline_tracking_js() { ?>
+<script>
+(function () {
+  const endpoint = '<?php echo esc_js( home_url( '/wp-json/fst/v1/event' ) ); ?>';
+
+  /* BUTTON CLICK */
+  document.addEventListener('click', e => {
+    const btn = e.target.closest('button, a');
+    if (!btn) return;
+    fetch(endpoint, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({
+        type : 'ButtonClick',
+        label: btn.id || btn.textContent.trim().slice(0,80),
+        page : window.location.href
+      })
+    });
+  });
+
+  /* FORM START */
+  document.addEventListener('focusin', e => {
+    const form = e.target.closest('form');
+    if (!form || form.fstStarted) return;
+    form.fstStarted = true;
+    fetch(endpoint, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        type :'FormStart',
+        label: form.id || form.action || 'generic',
+        page : window.location.href
+      })
+    });
+  });
+
+  /* FORM SUBMIT */
+  document.addEventListener('submit', e => {
+    const form = e.target;
+    fetch(endpoint, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({
+        type :'FormSubmit',
+        label: form.id || form.action || 'generic',
+        page : window.location.href
+      })
+    });
+  });
+})();
+</script>
+<?php }

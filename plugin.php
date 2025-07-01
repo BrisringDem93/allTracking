@@ -13,3 +13,4 @@ if ( ! defined( 'ABSPATH' ) ) {
 // Include plugin files
 require_once plugin_dir_path( __FILE__ ) . 'includes/tag-inserter.php';
 require_once plugin_dir_path( __FILE__ ) . 'includes/settings-page.php';
+require_once plugin_dir_path( __FILE__ ) . 'includes/server-tracking.php';
