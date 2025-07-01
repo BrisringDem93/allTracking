@@ -101,6 +101,7 @@ function fst_inline_tracking_js() { ?>
   document.addEventListener('click', e => {
     const btn = e.target.closest('button, a');
     if (!btn) return;
+    console.log('[FST] ButtonClick', btn);
     fetch(endpoint, {
       method: 'POST',
       headers: {'Content-Type':'application/json'},
@@ -117,6 +118,7 @@ function fst_inline_tracking_js() { ?>
     const form = e.target.closest('form');
     if (!form || form.fstStarted) return;
     form.fstStarted = true;
+    console.log('[FST] FormStart', form);
     fetch(endpoint, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -131,6 +133,7 @@ function fst_inline_tracking_js() { ?>
   /* FORM SUBMIT */
   document.addEventListener('submit', e => {
     const form = e.target;
+    console.log('[FST] FormSubmit', form);
     fetch(endpoint, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
