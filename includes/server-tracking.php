@@ -104,8 +104,15 @@ function fst_send_to_n8n( array $payload ) {
 
 function fst_send_to_ga4( string $eventName, array $params = [] ) {
 
+    $measurement_id = trim( get_option( 'ati_ga4_id', '' ) );
+    $api_secret     = trim( get_option( 'ati_ga4_api_secret', '' ) );
+
+    if ( empty( $measurement_id ) || empty( $api_secret ) ) {
+        return;
+    }
+
     $endpoint = 'https://www.google-analytics.com/mp/collect?measurement_id=' .
-                 FST_GA4_MEASUREMENT_ID . '&api_secret=' . FST_GA4_API_SECRET;
+                 rawurlencode( $measurement_id ) . '&api_secret=' . rawurlencode( $api_secret );
 
     $body = [
         'client_id' => fst_get_client_id(),

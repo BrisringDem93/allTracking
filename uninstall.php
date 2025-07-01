@@ -11,6 +11,10 @@ $options = array(
     'ati_enable_ga4',
     'ati_enable_gtm',
     'ati_disable_logged_in',
+    'ati_server_endpoint',
+    'ati_server_auth_key',
+    'ati_server_auth_value',
+    'ati_ga4_api_secret',
 );
 
 foreach ( $options as $option ) {

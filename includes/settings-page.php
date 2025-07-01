@@ -13,6 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 function ati_register_settings() {
     register_setting( 'ati_settings', 'ati_fb_pixel_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_ga4_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+    register_setting( 'ati_settings', 'ati_ga4_api_secret', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_gtm_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_enable_fb', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_enable_ga4', array( 'sanitize_callback' => 'sanitize_text_field' ) );
@@ -58,6 +59,10 @@ function ati_settings_page() {
                     <td><input name="ati_ga4_id" type="password" id="ati_ga4_id" value="<?php echo esc_attr( get_option( 'ati_ga4_id', '' ) ); ?>" class="regular-text" /></td>
                 </tr>
                 <tr>
+                    <th scope="row"><label for="ati_ga4_api_secret">GA4 API Secret</label></th>
+                    <td><input name="ati_ga4_api_secret" type="password" id="ati_ga4_api_secret" value="<?php echo esc_attr( get_option( 'ati_ga4_api_secret', '' ) ); ?>" class="regular-text" /></td>
+                </tr>
+                <tr>
                     <th scope="row"><label for="ati_gtm_id">Google Tag Manager ID</label></th>
                     <td><input name="ati_gtm_id" type="text" id="ati_gtm_id" value="<?php echo esc_attr( get_option( 'ati_gtm_id', '' ) ); ?>" class="regular-text" /></td>
                 </tr>
@@ -75,12 +80,12 @@ function ati_settings_page() {
     <td><input name="ati_server_endpoint" type="url" id="ati_server_endpoint" value="<?php echo esc_attr( get_option( 'ati_server_endpoint', '' ) ); ?>" class="regular-text code" /></td>
 </tr>
 <tr>
-    <th scope="row"><label for="ati_auth_header_name">Chiave Header Autenticazione</label></th>
-    <td><input name="ati_auth_header_name" type="text" id="ati_auth_header_name" value="<?php echo esc_attr( get_option( 'ati_auth_header_name', '' ) ); ?>" class="regular-text code" /></td>
+    <th scope="row"><label for="ati_server_auth_key">Chiave Header Autenticazione</label></th>
+    <td><input name="ati_server_auth_key" type="text" id="ati_server_auth_key" value="<?php echo esc_attr( get_option( 'ati_server_auth_key', '' ) ); ?>" class="regular-text code" /></td>
 </tr>
 <tr>
-    <th scope="row"><label for="ati_auth_header_value">Valore Header Autenticazione</label></th>
-    <td><input name="ati_auth_header_value" type="password" id="ati_auth_header_value" value="<?php echo esc_attr( get_option( 'ati_auth_header_value', '' ) ); ?>" class="regular-text code" /></td>
+    <th scope="row"><label for="ati_server_auth_value">Valore Header Autenticazione</label></th>
+    <td><input name="ati_server_auth_value" type="password" id="ati_server_auth_value" value="<?php echo esc_attr( get_option( 'ati_server_auth_value', '' ) ); ?>" class="regular-text code" /></td>
 </tr>
 
 
