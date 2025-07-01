@@ -28,6 +28,10 @@ function fst_track_pageview() {
         ],
     ];
 
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[FST] PageView event: ' . wp_json_encode( $event ) );
+    }
+
     fst_send_to_n8n( $event );
 
     if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
@@ -63,6 +67,10 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
         ],
     ];
 
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[FST] REST event: ' . wp_json_encode( $event ) );
+    }
+
     fst_send_to_n8n( $event );
 
     if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
@@ -93,6 +101,8 @@ function fst_send_to_n8n( array $payload ) {
 
     if ( is_wp_error( $res ) ) {
         error_log( '[FST] Errore invio tracking: ' . $res->get_error_message() );
+    } elseif ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[FST] Inviato a n8n: ' . wp_json_encode( $payload ) );
     }
 }
 
@@ -118,6 +128,10 @@ function fst_send_to_ga4( string $eventName, array $params = [] ) {
         ]
     ];
 
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[FST] Inviato a GA4: ' . wp_json_encode( $body ) );
+    }
+
     wp_remote_post( $endpoint, [
         'headers' => [ 'Content-Type' => 'application/json' ],
         'body'    => wp_json_encode( $body ),
@@ -134,5 +148,9 @@ function fst_get_client_id() {
 
     $new = uniqid() . '.' . time();
     setcookie( $cookie, $new, time() + 63072000, COOKIEPATH, COOKIE_DOMAIN );
+
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[FST] Nuovo client_id GA4: ' . $new );
+    }
     return $new;
 }
