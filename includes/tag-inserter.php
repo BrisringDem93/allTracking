@@ -8,36 +8,52 @@ if ( ! defined( 'ABSPATH' ) ) {
 }
 
 /**
+ * Controlla se il consenso marketing è stato dato dall'utente
+ * 
+ * Verifica il cookie cmplz_marketing che viene settato da Complianz
+ * o altri plugin di gestione cookie GDPR.
+ * 
+ * @return bool True se il consenso è stato dato, False altrimenti
+ */
+function ati_has_marketing_consent() {
+    // Controlla il cookie cmplz_marketing
+    if ( isset( $_COOKIE['cmplz_marketing'] ) ) {
+        return $_COOKIE['cmplz_marketing'] === 'allow';
+    }
+    
+    // Se il cookie non esiste, assumiamo nessun consenso per sicurezza GDPR
+    return false;
+}
+
+/**
  * Output tracking tags in the site head.
+ * 
+ * Controlla i consensi cookie prima di inserire gli script di tracking.
+ * Se cmplz_marketing != 'allow', inserisce solo il tracking server-side.
  */
 function ati_output_tags() {
+    // STEP 1: Controllo se il tracking è disabilitato per utenti loggati
     $disable_logged_in = get_option( 'ati_disable_logged_in', false );
-
     if ( $disable_logged_in && is_user_logged_in() ) {
         return;
     }
 
+    // STEP 2: Controllo consenso marketing GDPR
+    $has_marketing_consent = ati_has_marketing_consent();
+
+    // STEP 3: Gestione Facebook Pixel basata sul consenso
     $fb_enabled  = get_option( 'ati_enable_fb', false );
     $fb_pixel_id = trim( get_option( 'ati_fb_pixel_id', '' ) );
 
     if ( $fb_enabled && ! empty( $fb_pixel_id ) ) {
-        ?>
-        <!-- Facebook Pixel Code -->
-        <script>
-        !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod ?
-        n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-        if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-        n.queue=[];t=b.createElement(e);t.async=!0;
-        t.src=v;s=b.getElementsByTagName(e)[0];
-        s.parentNode.insertBefore(t,s)}(window, document,'script',
-        'https://connect.facebook.net/en_US/fbevents.js');
-        fbq('init', '<?php echo esc_js( $fb_pixel_id ); ?>');
-        </script>
-        <noscript>
-            <img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=<?php echo esc_attr( $fb_pixel_id ); ?>&ev=PageView&noscript=1" />
-        </noscript>
-        <!-- End Facebook Pixel Code -->
-        <?php
+        if ( $has_marketing_consent ) {
+            // ✅ Consenso dato: Carica Facebook Pixel completo (client-side)
+            require_once plugin_dir_path( __FILE__ ) . 'facebook-pixel.php';
+            ati_output_facebook_pixel();
+        } else {
+            // ⚠️ Nessun consenso: Solo tracking server-side (senza cookie/pixel)
+            // Il JavaScript invierà comunque eventi al server per il server-side tracking
+        }
     }
 
     $ga_enabled = get_option( 'ati_enable_ga4', false );
@@ -95,6 +111,21 @@ function fst_inline_tracking_js() { ?>
 <script>
 (function () {
   const endpoint = '<?php echo esc_js( home_url( '/wp-json/fst/v1/event' ) ); ?>';
+  
+  // ========================================
+  // CONTROLLO CONSENSO COOKIE GDPR
+  // ========================================
+  function hasMarketingConsent() {
+    const match = document.cookie.match(/(?:^|; )cmplz_marketing=([^;]+)/);
+    return match && match[1] === 'allow';
+  }
+  
+  const marketingConsent = hasMarketingConsent();
+  console.log('[FST] Consenso marketing:', marketingConsent ? '✅ Consentito' : '❌ Non consentito');
+  
+  // ========================================
+  // FUNZIONI HELPER EVENT ID
+  // ========================================
   function getEventId() {
     const m = document.cookie.match(/(?:^|; )fst_ev_id=([^;]+)/);
     if (m) return decodeURIComponent(m[1]);
@@ -103,11 +134,18 @@ function fst_inline_tracking_js() { ?>
       '; path=/; max-age=3600; SameSite=Lax';
     return id;
   }
+  
   function clearEventId() {
     document.cookie = 'fst_ev_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
   }
+  
+  // ========================================
+  // INVIO EVENTI (SERVER + FACEBOOK SE CONSENTITO)
+  // ========================================
   function sendEvent(payload) {
     payload.eventID = getEventId();
+    
+    // SEMPRE invia al server (per server-side tracking)
     fetch(endpoint, {
       method:'POST',
       headers:{'Content-Type':'application/json'},
@@ -115,22 +153,49 @@ function fst_inline_tracking_js() { ?>
     }).finally(clearEventId);
     return payload.eventID;
   }
-
+  
+  // ========================================
+  // PAGEVIEW TRACKING
+  // ========================================
   const pageViewID = getEventId();
-  if (window.fbq) {
+  
+  // Invia PageView al server via AJAX (sempre, anche senza consenso)
+  fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({
+      action: 'fst_pageview',
+      event_id: pageViewID,
+      page_url: window.location.href,
+      page_title: document.title
+    })
+  }).then(response => response.text())
+    .then(msg => console.log('[FST] 🖥️ Server PageView:', msg))
+    .catch(err => console.warn('[FST] ⚠️ Errore server PageView:', err));
+  
+  // SOLO se c'è consenso: invia anche a Facebook Pixel client-side
+  if (marketingConsent && window.fbq) {
     fbq('track', 'PageView', {}, {eventID: pageViewID});
+    console.log('[FST] 📘 Facebook Pixel PageView ID:', pageViewID);
   }
+  
   clearEventId();
 
+  // ========================================
+  // EVENT LISTENERS PER INTERAZIONI
+  // ========================================
+  
   /* BUTTON CLICK */
   document.addEventListener('click', e => {
     const btn = e.target.closest('button, a');
     if (!btn) return;
     console.log('[FST] ButtonClick', btn);
     sendEvent({
-      type : 'ButtonClick',
+      type: 'ButtonClick',
       label: btn.id || btn.textContent.trim().slice(0,80),
-      page : window.location.href
+      page: window.location.href,
+      customData: { button_text: btn.textContent.trim().slice(0,80) }
     });
   });
 
@@ -141,9 +206,10 @@ function fst_inline_tracking_js() { ?>
     form.fstStarted = true;
     console.log('[FST] FormStart', form);
     sendEvent({
-      type :'FormStart',
+      type: 'FormStart',
       label: form.id || form.action || 'generic',
-      page : window.location.href
+      page: window.location.href,
+      customData: { form_name: form.id || 'unnamed' }
     });
   });
 
@@ -152,9 +218,10 @@ function fst_inline_tracking_js() { ?>
     const form = e.target;
     console.log('[FST] FormSubmit', form);
     sendEvent({
-      type :'FormSubmit',
+      type: 'FormSubmit',
       label: form.id || form.action || 'generic',
-      page : window.location.href
+      page: window.location.href,
+      customData: { form_name: form.id || 'unnamed' }
     });
   });
 })();

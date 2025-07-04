@@ -1,190 +1,447 @@
 <?php
 /**
- * server-tracking.php
- * Tracciamento server-side per Meta Pixel (CAPI) e GA4 (Measurement Protocol)
- * Eventi: PageView, ButtonClick, FormStart, FormSubmit
+ * Server-Side Tracking Handler
+ * 
+ * Questo file gestisce il tracciamento server-side per eventi Facebook e GA4.
+ * Il flusso funziona così:
+ * 1. JavaScript genera un event_id univoco sul client
+ * 2. JavaScript invia l'evento sia a Facebook che al server
+ * 3. Il server riceve l'evento con lo stesso event_id per evitare duplicazioni
+ * 
+ * ========================================
+ * ARCHITETTURA DEL SISTEMA
+ * ========================================
+ * 
+ * FRONTEND (JavaScript):
+ * - Genera event_id univoci (formato: evt_timestamp_random)
+ * - Invia a Facebook Pixel direttamente
+ * - Invia al server WordPress via AJAX/REST
+ * 
+ * BACKEND (questo file):
+ * - Riceve eventi con event_id dal frontend
+ * - Costruisce user_data (IP, cookies, pseudonimi)
+ * - Inoltra a n8n per Facebook Conversions API
+ * - Inoltra a GA4 via Measurement Protocol (opzionale)
+ * 
+ * ENDPOINT DISPONIBILI:
+ * - AJAX: wp-admin/admin-ajax.php?action=fst_pageview (solo PageView)
+ * - REST: /wp-json/fst/v1/event (eventi personalizzati)
+ * 
+ * FUNZIONI PRINCIPALI:
+ * - fst_ajax_pageview_handler(): Gestisce PageView via AJAX
+ * - fst_rest_event_handler(): Gestisce eventi personalizzati via REST
+ * - fst_build_user_data(): Costruisce dati utente per Facebook
+ * - fst_get_uid(): Genera/recupera pseudonimo utente persistente
+ * - fst_send_to_n8n(): Invia a webhook n8n
+ * - fst_send_to_ga4(): Invia a Google Analytics 4
+ * 
+ * ========================================
+ * DEDUPLICA EVENTI
+ * ========================================
+ * 
+ * Il sistema evita eventi duplicati usando event_id condivisi:
+ * 1. JavaScript genera: evt_1735939200_abc123def
+ * 2. Facebook riceve: PageView con eventID = evt_1735939200_abc123def  
+ * 3. Server riceve: stesso event_id e lo passa a n8n
+ * 4. n8n invia a Facebook API con stesso event_id
+ * 5. Facebook deduplica automaticamente usando l'ID
+ * 
+ * Risultato: 1 solo evento contato, massima precisione.
+ * 
+ * @package QuickTrackingIntegration
+ * @version 1.1
+ * @author Francesco de Minicis
  */
 
+// Sicurezza: impedisce accesso diretto al file
 if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// 1. PAGEVIEW – spedito dal server ad ogni page load e deduplicato con il Pixel
-add_action( 'template_redirect', 'fst_track_pageview', 1 );
-function fst_track_pageview() {
-    if ( is_admin() || wp_doing_ajax() ) {
-        return;
+// ========================================
+// SEZIONE 1: AJAX HANDLER PER PAGEVIEW
+// ========================================
+
+/**
+ * Registra gli endpoint AJAX per il tracciamento PageView
+ * 
+ * wp_ajax_fst_pageview = per utenti autenticati
+ * wp_ajax_nopriv_fst_pageview = per utenti non autenticati (visitatori anonimi)
+ * 
+ * Questo sostituisce il vecchio approccio template_redirect che tracciava
+ * automaticamente ogni caricamento pagina lato server.
+ * Ora il JavaScript controlla quando tracciare e genera l'event_id.
+ */
+add_action( 'wp_ajax_fst_pageview', 'fst_ajax_pageview_handler' );
+add_action( 'wp_ajax_nopriv_fst_pageview', 'fst_ajax_pageview_handler' );
+
+/**
+ * Gestisce le richieste AJAX per il tracciamento PageView
+ * 
+ * Riceve dal JavaScript:
+ * - event_id: ID univoco generato dal client per evitare duplicazioni
+ * - page_url: URL della pagina corrente
+ * - page_title: Titolo della pagina
+ * 
+ * Flusso:
+ * 1. Valida i dati ricevuti
+ * 2. Costruisce l'evento con user_data (cookie Meta, IP, etc.)
+ * 3. Invia a n8n (se configurato)
+ * 4. Invia a GA4 server-side (se abilitato)
+ * 5. Restituisce conferma con event_id
+ * 
+ * @since 1.1
+ * @return void Termina con wp_die() e messaggio di conferma
+ */
+
+function fst_ajax_pageview_handler() {
+    // STEP 1: Sanitizza e valida i dati ricevuti dal JavaScript
+    $event_id = sanitize_text_field( $_POST['event_id'] );     // ID univoco generato dal client
+    $page_url = esc_url_raw( $_POST['page_url'] );            // URL della pagina (es: https://sito.com/pagina)
+    $page_title = sanitize_text_field( $_POST['page_title'] ); // Titolo della pagina (es: "Homepage - Il mio sito")
+    
+    // STEP 2: Verifica che l'event_id sia presente (obbligatorio per evitare duplicazioni)
+    if ( ! $event_id ) {
+        wp_die( 'Event ID richiesto', 400 );
     }
 
-    $event_id = fst_get_event_id();
-
+    // STEP 3: Costruisce l'oggetto evento nel formato standard per Facebook Conversions API
     $event = [
-        'event_name'       => 'PageView',
-        'event_time'       => time(),
-        'event_source_url' => home_url( add_query_arg( [], $_SERVER['REQUEST_URI'] ) ),
-        'action_source'    => 'website',
-        'event_id'         => $event_id,
-        'user_data'        => fst_build_user_data(),
+        'event_name'       => 'PageView',                 // Nome evento Facebook
+        'event_time'       => time(),                     // Timestamp Unix corrente
+        'event_source_url' => $page_url,                 // URL sorgente evento
+        'action_source'    => 'website',                 // Tipo sorgente (sempre "website")
+        'event_id'         => $event_id,                 // ID per deduplica client/server
+        'user_data'        => fst_build_user_data(),     // Dati utente (IP, cookies, etc.)
+        'custom_data'      => [
+            'page_title' => $page_title,                 // Titolo pagina personalizzato
+            'triggered_by' => 'javascript'               // Indicatore che proviene da JS
+        ]
     ];
 
+    // STEP 4: Log di debug (se WP_DEBUG è attivo)
     if ( WP_DEBUG ) {
-        error_log( '[FST] PageView event: ' . wp_json_encode( $event ) );
+        error_log( '[FST] 🎯 PageView da JavaScript: ID ' . $event_id );
     }
 
+    // STEP 5: Invia l'evento al webhook n8n (se configurato nelle impostazioni)
     fst_send_to_n8n( [ 'data' => [ $event ] ] );
+    
+    // STEP 6: Invia anche a GA4 server-side (se abilitato nelle impostazioni)
     if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
-        fst_send_to_ga4( 'page_view', [] );
+        fst_send_to_ga4( 'page_view', [ 'page_title' => $page_title ] );
     }
+
+    // STEP 7: Termina l'esecuzione AJAX con messaggio di conferma
+    wp_die( 'PageView tracciato: ' . $event_id );
 }
 
-// 2. REST API per eventi custom dal browser (ButtonClick, FormStart, FormSubmit)
+// ========================================
+// SEZIONE 2: REST API PER ALTRI EVENTI
+// ========================================
+
+/**
+ * Registra endpoint REST API per eventi personalizzati
+ * 
+ * Endpoint: /wp-json/fst/v1/event
+ * Metodo: POST
+ * 
+ * Gestisce eventi come:
+ * - ButtonClick (clic su pulsanti)
+ * - FormStart (inizio compilazione form)
+ * - FormSubmit (invio form)
+ * 
+ * Permette a JavaScript di inviare eventi personalizzati con maggiore flessibilità
+ * rispetto agli endpoint AJAX (che sono limitati a PageView).
+ */
 add_action( 'rest_api_init', function() {
     register_rest_route( 'fst/v1', '/event', [
-        'methods'             => 'POST',
-        'callback'            => 'fst_rest_event_handler',
-        'permission_callback' => '__return_true',
+        'methods'             => 'POST',                    // Solo richieste POST
+        'callback'            => 'fst_rest_event_handler', // Funzione che gestisce la richiesta
+        'permission_callback' => '__return_true',          // Permette accesso a tutti (pubblico)
     ] );
 } );
-function fst_rest_event_handler( WP_REST_Request $req ) {
-    $type    = sanitize_text_field( $req->get_param( 'type' ) );
-    $label   = sanitize_text_field( $req->get_param( 'label' ) );
-    $page    = esc_url_raw( $req->get_param( 'page' ) );
-    // Usa eventID dal client se presente, altrimenti cookie/fallback
-    $event_id = $req->get_param( 'eventID' )
-        ? sanitize_text_field( $req->get_param( 'eventID' ) )
-        : fst_get_event_id();
 
+/**
+ * Gestisce richieste REST API per eventi personalizzati
+ * 
+ * Parametri attesi nel body della richiesta POST:
+ * - type: tipo evento (ButtonClick, FormStart, FormSubmit, etc.)
+ * - label: etichetta descrittiva dell'evento
+ * - page: URL della pagina dove avviene l'evento
+ * - eventID: ID univoco generato dal JavaScript (OBBLIGATORIO)
+ * - email: email utente (solo per FormSubmit, verrà hashata)
+ * - phone: telefono utente (solo per FormSubmit, verrà hashato)
+ * 
+ * @param WP_REST_Request $req Oggetto richiesta REST di WordPress
+ * @return WP_REST_Response Risposta JSON con status e event_id
+ * @since 1.1
+ */
+
+function fst_rest_event_handler( WP_REST_Request $req ) {
+    // STEP 1: Estrae e sanitizza i parametri base della richiesta
+    $type    = sanitize_text_field( $req->get_param( 'type' ) );  // Tipo evento (ButtonClick, FormStart, etc.)
+    $label   = sanitize_text_field( $req->get_param( 'label' ) ); // Etichetta descrittiva (es: "Download PDF")
+    $page    = esc_url_raw( $req->get_param( 'page' ) );          // URL pagina sorgente
+    
+    // STEP 2: Verifica presenza obbligatoria dell'event_id (per deduplica)
+    // A differenza del vecchio sistema, NON generiamo più event_id lato server
+    $event_id = $req->get_param( 'eventID' );
+    if ( ! $event_id ) {
+        return rest_ensure_response( [
+            'status' => 'error',
+            'message' => 'eventID richiesto dal client'
+        ] );
+    }
+    $event_id = sanitize_text_field( $event_id );
+
+    // STEP 3: Costruisce l'evento base nel formato Facebook Conversions API
     $event = [
-        'event_name'       => $type,
-        'event_time'       => time(),
-        'event_source_url' => $page,
-        'action_source'    => 'website',
-        'event_id'         => $event_id,
-        'custom_data'      => [ 'label' => $label ],
-        'user_data'        => fst_build_user_data(),
+        'event_name'       => $type,                     // Nome evento personalizzato
+        'event_time'       => time(),                   // Timestamp corrente
+        'event_source_url' => $page,                    // URL sorgente
+        'action_source'    => 'website',               // Sempre "website"
+        'event_id'         => $event_id,               // ID per deduplica client/server
+        'custom_data'      => [ 'label' => $label ],   // Dati personalizzati
+        'user_data'        => fst_build_user_data(),   // Dati utente (IP, cookie, etc.)
     ];
 
-    // Aggiungi hash dati sensibili su FormSubmit
+    // STEP 4: Gestione speciale per FormSubmit - hasha dati sensibili
+    // Email e telefono vengono hashati per privacy ma rimangono tracciabili
     if ( $type === 'FormSubmit' ) {
+        // Hash SHA256 dell'email (se fornita)
         if ( $email = $req->get_param( 'email' ) ) {
             $event['user_data']['em'] = hash( 'sha256', strtolower( trim( $email ) ) );
         }
+        // Hash SHA256 del telefono (se fornito, solo numeri)
         if ( $phone = $req->get_param( 'phone' ) ) {
-            $clean = preg_replace( '/\D+/', '', $phone );
+            $clean = preg_replace( '/\D+/', '', $phone ); // Rimuove tutto tranne i numeri
             $event['user_data']['ph'] = hash( 'sha256', $clean );
         }
     }
 
+    // STEP 5: Log di debug per monitoraggio
     if ( WP_DEBUG ) {
-        error_log( '[FST] REST event: ' . wp_json_encode( $event ) );
+        error_log( '[FST] 🎯 ' . $type . ' da JavaScript: ID ' . $event_id );
     }
 
+    // STEP 6: Invia a n8n (webhook personalizzato)
     fst_send_to_n8n( [ 'data' => [ $event ] ] );
+    
+    // STEP 7: Invia anche a GA4 server-side (se abilitato)
     if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
         fst_send_to_ga4( strtolower( $type ), [ 'label' => $label ] );
     }
 
-    fst_clear_event_id();
-
+    // STEP 8: Restituisce risposta JSON di successo
     return rest_ensure_response( [ 'status' => 'ok', 'event_id' => $event_id ] );
 }
 
-// 3. Costruisce user_data con pseudonimo interno e cookie Meta
+// ========================================
+// SEZIONE 3: FUNZIONI HELPER
+// ========================================
+
+/**
+ * Costruisce l'oggetto user_data per Facebook Conversions API
+ * 
+ * Raccoglie tutti i dati disponibili sull'utente per migliorare il matching
+ * e l'attribuzione degli eventi. Include:
+ * 
+ * - external_id: Pseudonimo persistente generato internamente
+ * - fbp: Cookie Facebook Pixel (_fbp) se presente
+ * - fbc: Cookie Facebook Click (_fbc) se presente  
+ * - client_user_agent: User Agent del browser
+ * - client_ip_address: Indirizzo IP del visitatore
+ * 
+ * Tutti i dati sono anonimi o pseudonimi per rispettare la privacy.
+ * 
+ * @return array Dati utente formattati per Facebook API
+ * @since 1.1
+ */
 function fst_build_user_data() {
     return [
+        // Pseudonimo utente persistente (generato internamente, non invasivo)
         'external_id'       => fst_get_uid(),
+        
+        // Cookie Facebook Pixel (se l'utente ha visitato una pagina con FB Pixel)
         'fbp'               => isset( $_COOKIE['_fbp'] ) ? sanitize_text_field( $_COOKIE['_fbp'] ) : null,
+        
+        // Cookie Facebook Click (se l'utente è arrivato tramite annuncio Facebook)
         'fbc'               => isset( $_COOKIE['_fbc'] ) ? sanitize_text_field( $_COOKIE['_fbc'] ) : null,
+        
+        // User Agent del browser (per device matching)
         'client_user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
+        
+        // Indirizzo IP del visitatore (per geo matching)
         'client_ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
     ];
 }
 
-// 4a. Genera o recupera pseudonimo utente persistente
+/**
+ * Genera o recupera pseudonimo utente persistente
+ * 
+ * Crea un identificatore unico per ogni visitatore che persiste tra le sessioni
+ * ma rimane anonimo. Utilizza:
+ * 
+ * - Cookie 'fst_uid' con durata 2 anni
+ * - UUID4 generato da WordPress (sicuro e univoco)  
+ * - Non traccia dati personali, solo un codice casuale
+ * 
+ * Questo permette di:
+ * - Collegare eventi della stessa persona
+ * - Migliorare l'attribuzione Facebook
+ * - Rispettare la privacy (nessun dato identificabile)
+ * 
+ * @return string Pseudonimo utente (es: "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+ * @since 1.1
+ */
 function fst_get_uid() {
     $cookie = 'fst_uid';
+    
+    // Se il cookie esiste già, restituisce il valore esistente
     if ( isset( $_COOKIE[ $cookie ] ) ) {
         return sanitize_text_field( $_COOKIE[ $cookie ] );
     }
+    
+    // Genera nuovo UUID4 unico e lo salva nel cookie per 2 anni
     $uid = wp_generate_uuid4();
     setcookie( $cookie, $uid, time() + 63072000, COOKIEPATH, COOKIE_DOMAIN );
     return $uid;
 }
-// 4b. Recupera o genera eventID persistente per deduplicazione
-function fst_get_event_id() {
-    $cookie = 'fst_ev_id';
-    if ( isset( $_COOKIE[ $cookie ] ) ) {
-        return sanitize_text_field( $_COOKIE[ $cookie ] );
-    }
-    $eid = 'evt_' . time() . '_' . wp_generate_uuid4();
-    setcookie( $cookie, $eid, time() + 3600, COOKIEPATH, COOKIE_DOMAIN );
-    return $eid;
-}
 
-// Cancella l'eventID dopo l'uso
-function fst_clear_event_id() {
-    setcookie( 'fst_ev_id', '', time() - 3600, COOKIEPATH, COOKIE_DOMAIN );
-}
+// ========================================
+// SEZIONE 4: FUNZIONI DI INVIO DATI
+// ========================================
 
-// 5. Invio a n8n con debug dettagliato
+/**
+ * Invia eventi al webhook n8n con debug dettagliato
+ * 
+ * n8n è una piattaforma di automazione che può ricevere gli eventi
+ * e inoltrarli a Facebook Conversions API, CRM, database, etc.
+ * 
+ * Processo:
+ * 1. Verifica che l'endpoint sia configurato
+ * 2. Aggiunge autenticazione (se configurata)
+ * 3. Codifica il payload in JSON
+ * 4. Invia richiesta POST con timeout 5 secondi
+ * 5. Logga tutto in dettaglio per debugging
+ * 
+ * Configurazione richiesta (nelle impostazioni WordPress):
+ * - ati_server_endpoint: URL del webhook n8n
+ * - ati_server_auth_key: Nome header autenticazione (opzionale)
+ * - ati_server_auth_value: Valore header autenticazione (opzionale)
+ * 
+ * @param array $payload Dati evento formattati per Facebook API
+ * @return void
+ * @since 1.1
+ */
 function fst_send_to_n8n( array $payload ) {
+    // STEP 1: Verifica che l'endpoint n8n sia configurato
     $endpoint = trim( get_option( 'ati_server_endpoint', '' ) );
     if ( ! $endpoint ) {
-        return;
+        return; // Se non configurato, esce silenziosamente
     }
-    $auth_key = trim( get_option( 'ati_server_auth_key', '' ) );
-    $auth_val = trim( get_option( 'ati_server_auth_value', '' ) );
+    
+    // STEP 2: Configura autenticazione (se necessaria)
+    $auth_key = trim( get_option( 'ati_server_auth_key', '' ) );   // Nome header (es: "X-API-Key")
+    $auth_val = trim( get_option( 'ati_server_auth_value', '' ) ); // Valore header (es: "abc123")
     $headers  = [ 'Content-Type' => 'application/json' ];
+    
+    // Aggiunge header di autenticazione se configurato
     if ( $auth_key && $auth_val ) {
         $headers[ $auth_key ] = $auth_val;
     }
+    
+    // STEP 3: Codifica il payload in JSON
     $body = wp_json_encode( $payload );
+    
+    // STEP 4: Log dettagliato per debugging (solo se WP_DEBUG è attivo)
     if ( WP_DEBUG ) {
-        error_log( '[FST] ► Invio a n8n – DETTAGLI' );
+        error_log( '[FST] ► Invio a n8n – ' . $payload['data'][0]['event_name'] . ' ID: ' . $payload['data'][0]['event_id'] );
         error_log( '[FST]   Endpoint : ' . $endpoint );
-        error_log( '[FST]   Headers  : ' . print_r( $headers, true ) );
         error_log( '[FST]   Payload  : ' . $body );
     }
+    
+    // STEP 5: Invia richiesta POST al webhook n8n
     $response = wp_remote_post( $endpoint, [
         'headers' => $headers,
         'body'    => $body,
-        'timeout' => 5,
+        'timeout' => 5, // Timeout 5 secondi per evitare blocchi
     ] );
+    
+    // STEP 6: Gestione errori di connessione
     if ( is_wp_error( $response ) ) {
         error_log( '[FST] ✖ WP_Error n8n: ' . $response->get_error_message() );
         return;
     }
-    $code       = wp_remote_retrieve_response_code( $response );
-    $res_body   = wp_remote_retrieve_body( $response );
-    $res_headers= wp_remote_retrieve_headers( $response );
+    
+    // STEP 7: Analizza la risposta del server
+    $code = wp_remote_retrieve_response_code( $response );
+    $res_body = wp_remote_retrieve_body( $response );
+    
+    // Log della risposta per monitoring
     if ( WP_DEBUG ) {
-        error_log( '[FST] ◄ Risposta n8n – codice ' . $code );
-        error_log( '[FST]   Response headers: ' . print_r( $res_headers, true ) );
-        error_log( '[FST]   Response body   : ' . $res_body );
+        error_log( '[FST] ◄ Risposta n8n: HTTP ' . $code );
+        error_log( '[FST]   Response: ' . $res_body );
     }
+    
+    // Logga errori HTTP (se diverso da 200 OK)
     if ( $code !== 200 ) {
         error_log( '[FST] ERRORE n8n: HTTP ' . $code );
     }
 }
 
-// 6. Invio a GA4 via Measurement Protocol (opzionale)
+/**
+ * Invia eventi a Google Analytics 4 via Measurement Protocol
+ * 
+ * Questa funzione è opzionale e invia gli stessi eventi anche a GA4
+ * oltre che a Facebook. Utilizza il Measurement Protocol di GA4 che
+ * permette di inviare eventi direttamente dal server.
+ * 
+ * Vantaggi del server-side GA4:
+ * - Eventi non bloccabili da adblocker
+ * - Maggiore precisione dei dati
+ * - Supporta eventi offline/delayed
+ * 
+ * Configurazione richiesta:
+ * - ati_ga4_id: ID Google Analytics (es: "G-XXXXXXXXXX")
+ * - ati_ga4_api_secret: Secret per Measurement Protocol
+ * - ati_enable_ga4_server: deve essere "1" per abilitare
+ * 
+ * @param string $eventName Nome evento GA4 (es: "page_view", "button_click")
+ * @param array $params Parametri personalizzati dell'evento
+ * @return void
+ * @since 1.1
+ */
 function fst_send_to_ga4( string $eventName, array $params = [] ) {
+    // STEP 1: Verifica configurazione GA4
     $measurement_id = trim( get_option( 'ati_ga4_id', '' ) );
     $api_secret     = trim( get_option( 'ati_ga4_api_secret', '' ) );
+    
     if ( empty( $measurement_id ) || empty( $api_secret ) ) {
-        return;
+        return; // Se non configurato, esce silenziosamente
     }
-    $endpoint = 'https://www.google-analytics.com/mp/collect?measurement_id=' . rawurlencode( $measurement_id ) . '&api_secret=' . rawurlencode( $api_secret );
+    
+    // STEP 2: Costruisce URL endpoint GA4 Measurement Protocol
+    $endpoint = 'https://www.google-analytics.com/mp/collect?measurement_id=' . 
+                rawurlencode( $measurement_id ) . '&api_secret=' . rawurlencode( $api_secret );
+    
+    // STEP 3: Costruisce payload nel formato GA4
     $body = [
-        'client_id' => fst_get_uid(),
-        'events'    => [ [ 'name' => $eventName, 'params' => $params ] ],
+        'client_id' => fst_get_uid(),                           // Stesso ID utente di Facebook
+        'events'    => [ [ 'name' => $eventName, 'params' => $params ] ], // Array eventi
     ];
+    
+    // STEP 4: Log di debug
     if ( WP_DEBUG ) {
-        error_log( '[FST] ▶️ Inviato a GA4: ' . wp_json_encode( $body ) );
+        error_log( '[FST] ▶️ GA4: ' . $eventName );
     }
+    
+    // STEP 5: Invia a GA4 (fire-and-forget, senza gestione errori dettagliata)
     wp_remote_post( $endpoint, [
         'headers' => [ 'Content-Type' => 'application/json' ],
         'body'    => wp_json_encode( $body ),
         'timeout' => 5,
     ] );
 }
+?>
