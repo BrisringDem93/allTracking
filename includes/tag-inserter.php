@@ -121,6 +121,19 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // ========================================
   // CONTROLLO CONSENSO COOKIE GDPR
   // ========================================
+  
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+  // Blocco di debug per il cookie Complianz (visibile solo con WP_DEBUG attivo)
+  console.log('[FST DEBUG] Controllo cookie Complianz...');
+  const complianzCookie = document.cookie.split('; ').find(row => row.startsWith('cmplz_marketing='));
+  if (complianzCookie) {
+    console.log('[FST DEBUG] Cookie cmplz_marketing trovato:', complianzCookie);
+    console.log('[FST DEBUG] Valore del cookie:', complianzCookie.split('=')[1]);
+  } else {
+    console.log('[FST DEBUG] Cookie cmplz_marketing non trovato.');
+  }
+<?php endif; ?>
+
   function hasMarketingConsent() {
     const match = document.cookie.match(/(?:^|; )cmplz_marketing=([^;]+)/);
     return match && match[1] === 'allow';
