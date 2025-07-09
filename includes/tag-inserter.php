@@ -109,8 +109,14 @@ add_action( 'wp_body_open', 'ati_output_gtm_noscript' );
 add_action( 'wp_footer', 'fst_inline_tracking_js', 100 );
 function fst_inline_tracking_js() { ?>
 <script>
+// ========================================
+// VARIABILI GLOBALI E SETUP
+// ========================================
+window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
+
 (function () {
   const endpoint = '<?php echo esc_js( home_url( '/wp-json/fst/v1/event' ) ); ?>';
+  const ajaxUrl = window.fstAjaxUrl;
   
   // ========================================
   // CONTROLLO CONSENSO COOKIE GDPR
@@ -160,7 +166,12 @@ function fst_inline_tracking_js() { ?>
   const pageViewID = getEventId();
   
   // Invia PageView al server via AJAX (sempre, anche senza consenso)
-  fetch('<?php echo admin_url('admin-ajax.php'); ?>', {
+  console.log('[FST] 🖥️ Invio PageView al server:', ajaxUrl);
+  console.log('[FST] 🖥️ Event ID:', pageViewID);
+  console.log('[FST] 🖥️ Page URL:', window.location.href);
+  console.log('[FST] 🖥️ Page Title:', document.title);
+  
+  fetch(ajaxUrl, {
     method: 'POST',
     credentials: 'same-origin',
     headers: {'Content-Type': 'application/x-www-form-urlencoded'},
@@ -170,9 +181,16 @@ function fst_inline_tracking_js() { ?>
       page_url: window.location.href,
       page_title: document.title
     })
-  }).then(response => response.text())
-    .then(msg => console.log('[FST] 🖥️ Server PageView:', msg))
-    .catch(err => console.warn('[FST] ⚠️ Errore server PageView:', err));
+  }).then(response => {
+    console.log('[FST] 🖥️ Server response status:', response.status);
+    return response.text();
+  })
+    .then(msg => {
+      console.log('[FST] 🖥️ Server PageView response:', msg);
+    })
+    .catch(err => {
+      console.error('[FST] ⚠️ Errore server PageView:', err);
+    });
   
   // SOLO se c'è consenso: invia anche a Facebook Pixel client-side
   if (marketingConsent && window.fbq) {
@@ -218,7 +236,7 @@ function fst_inline_tracking_js() { ?>
     const form = e.target;
     console.log('[FST] FormSubmit', form);
     sendEvent({
-      type: 'FormSubmit',
+      type: 'Lead',
       label: form.id || form.action || 'generic',
       page: window.location.href,
       customData: { form_name: form.id || 'unnamed' }

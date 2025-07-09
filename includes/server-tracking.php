@@ -75,6 +75,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 add_action( 'wp_ajax_fst_pageview', 'fst_ajax_pageview_handler' );
 add_action( 'wp_ajax_nopriv_fst_pageview', 'fst_ajax_pageview_handler' );
 
+// Test per verificare che gli hook siano registrati
+if ( WP_DEBUG ) {
+    error_log( '[FST] 🔧 Hook AJAX registrati per fst_pageview' );
+}
+
 /**
  * Gestisce le richieste AJAX per il tracciamento PageView
  * 
@@ -95,13 +100,22 @@ add_action( 'wp_ajax_nopriv_fst_pageview', 'fst_ajax_pageview_handler' );
  */
 
 function fst_ajax_pageview_handler() {
-    // STEP 1: Sanitizza e valida i dati ricevuti dal JavaScript
-    $event_id = sanitize_text_field( $_POST['event_id'] );     // ID univoco generato dal client
-    $page_url = esc_url_raw( $_POST['page_url'] );            // URL della pagina (es: https://sito.com/pagina)
-    $page_title = sanitize_text_field( $_POST['page_title'] ); // Titolo della pagina (es: "Homepage - Il mio sito")
+    // STEP 1: Log di debug per verificare che la funzione venga chiamata
+    if ( WP_DEBUG ) {
+        error_log( '[FST] 🎯 AJAX PageView handler chiamato' );
+        error_log( '[FST] POST data: ' . print_r( $_POST, true ) );
+    }
     
-    // STEP 2: Verifica che l'event_id sia presente (obbligatorio per evitare duplicazioni)
+    // STEP 2: Sanitizza e valida i dati ricevuti dal JavaScript
+    $event_id = sanitize_text_field( $_POST['event_id'] ?? '' );     // ID univoco generato dal client
+    $page_url = esc_url_raw( $_POST['page_url'] ?? '' );            // URL della pagina (es: https://sito.com/pagina)
+    $page_title = sanitize_text_field( $_POST['page_title'] ?? '' ); // Titolo della pagina (es: "Homepage - Il mio sito")
+    
+    // STEP 3: Verifica che l'event_id sia presente (obbligatorio per evitare duplicazioni)
     if ( ! $event_id ) {
+        if ( WP_DEBUG ) {
+            error_log( '[FST] ❌ Event ID mancante' );
+        }
         wp_die( 'Event ID richiesto', 400 );
     }
 
@@ -208,7 +222,7 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
 
     // STEP 4: Gestione speciale per FormSubmit - hasha dati sensibili
     // Email e telefono vengono hashati per privacy ma rimangono tracciabili
-    if ( $type === 'FormSubmit' ) {
+    if ( $type === 'FormSubmit' || $type === 'Lead' ) {
         // Hash SHA256 dell'email (se fornita)
         if ( $email = $req->get_param( 'email' ) ) {
             $event['user_data']['em'] = hash( 'sha256', strtolower( trim( $email ) ) );
@@ -414,8 +428,8 @@ function fst_send_to_n8n( array $payload ) {
  * @since 1.1
  */
 function fst_send_to_ga4( string $eventName, array $params = [] ) {
-    // STEP 1: Verifica configurazione GA4
-    $measurement_id = trim( get_option( 'ati_ga4_id', '' ) );
+    // STEP 1: Verifica configurazione GA4 server-side
+    $measurement_id = trim( get_option( 'ati_ga4_server_id', '' ) );  // Usa ID specifico per server
     $api_secret     = trim( get_option( 'ati_ga4_api_secret', '' ) );
     
     if ( empty( $measurement_id ) || empty( $api_secret ) ) {
