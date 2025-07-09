@@ -244,4 +244,4 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   });
 })();
 </script>
-<?php }
+<?php } ?>
