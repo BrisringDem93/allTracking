@@ -16,11 +16,25 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @return bool True se il consenso è stato dato, False altrimenti
  */
 function ati_has_marketing_consent() {
-    // Controlla il cookie cmplz_marketing
-    if ( isset( $_COOKIE['cmplz_marketing'] ) ) {
-        return $_COOKIE['cmplz_marketing'] === 'allow';
+    // DEBUG: Log controllo consenso
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] === CONTROLLO CONSENSO MARKETING ===' );
+        error_log( '[ATI DEBUG] Cookie disponibili: ' . json_encode( $_COOKIE ) );
     }
     
+    // Controlla il cookie cmplz_marketing
+    if ( isset( $_COOKIE['cmplz_marketing'] ) ) {
+        $consent_value = $_COOKIE['cmplz_marketing'];
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[ATI DEBUG] Cookie cmplz_marketing trovato: ' . $consent_value );
+            error_log( '[ATI DEBUG] Consenso valido: ' . ( $consent_value === 'allow' ? 'SI' : 'NO' ) );
+        }
+        return $consent_value === 'allow';
+    }
+    
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] Cookie cmplz_marketing NON trovato' );
+    }
     // Se il cookie non esiste, assumiamo nessun consenso per sicurezza GDPR
     return false;
 }
@@ -32,27 +46,95 @@ function ati_has_marketing_consent() {
  * Se cmplz_marketing != 'allow', inserisce solo il tracking server-side.
  */
 function ati_output_tags() {
+    // DEBUG: Log inizio funzione
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] === INIZIO ati_output_tags() ===' );
+    }
+    
     // STEP 1: Controllo se il tracking è disabilitato per utenti loggati
     $disable_logged_in = get_option( 'ati_disable_logged_in', false );
+    
+    // DEBUG: Log controllo utenti loggati
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] Disable logged in: ' . ( $disable_logged_in ? 'SI' : 'NO' ) );
+        error_log( '[ATI DEBUG] Utente loggato: ' . ( is_user_logged_in() ? 'SI' : 'NO' ) );
+    }
+    
     if ( $disable_logged_in && is_user_logged_in() ) {
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[ATI DEBUG] USCITA: Tracking disabilitato per utenti loggati' );
+        }
         return;
     }
 
     // STEP 2: Controllo consenso marketing GDPR
     $has_marketing_consent = ati_has_marketing_consent();
+    
+    // DEBUG: Log consenso marketing
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] Consenso marketing ottenuto: ' . ( $has_marketing_consent ? 'SI' : 'NO' ) );
+    }
 
     // STEP 3: Gestione Facebook Pixel basata sul consenso
     $fb_enabled  = get_option( 'ati_enable_fb', false );
     $fb_pixel_id = trim( get_option( 'ati_fb_pixel_id', '' ) );
 
+    // DEBUG: Log impostazioni Facebook
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] Facebook abilitato: ' . ( $fb_enabled ? 'SI' : 'NO' ) );
+        error_log( '[ATI DEBUG] Facebook Pixel ID: "' . $fb_pixel_id . '"' );
+        error_log( '[ATI DEBUG] Facebook Pixel ID vuoto: ' . ( empty( $fb_pixel_id ) ? 'SI' : 'NO' ) );
+    }
+
     if ( $fb_enabled && ! empty( $fb_pixel_id ) ) {
         if ( $has_marketing_consent ) {
             // ✅ Consenso dato: Carica Facebook Pixel completo (client-side)
-            require_once plugin_dir_path( __FILE__ ) . 'facebook-pixel.php';
-            ati_output_facebook_pixel();
+            if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                error_log( '[ATI DEBUG] ✅ CARICAMENTO Facebook Pixel - consenso dato' );
+                error_log( '[ATI DEBUG] File da includere: ' . plugin_dir_path( __FILE__ ) . 'facebook-pixel.php' );
+                error_log( '[ATI DEBUG] File esiste: ' . ( file_exists( plugin_dir_path( __FILE__ ) . 'facebook-pixel.php' ) ? 'SI' : 'NO' ) );
+            }
+            
+            $facebook_pixel_file = plugin_dir_path( __FILE__ ) . 'facebook-pixel.php';
+            if ( file_exists( $facebook_pixel_file ) ) {
+                require_once $facebook_pixel_file;
+                
+                // Verifica che la funzione esista prima di chiamarla
+                if ( function_exists( 'ati_output_facebook_pixel' ) ) {
+                    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                        error_log( '[ATI DEBUG] ✅ Chiamata ati_output_facebook_pixel()' );
+                    }
+                    ati_output_facebook_pixel();
+                } else {
+                    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                        error_log( '[ATI DEBUG] ❌ Funzione ati_output_facebook_pixel() NON trovata' );
+                    }
+                }
+            } else {
+                if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                    error_log( '[ATI DEBUG] ❌ File facebook-pixel.php NON trovato' );
+                }
+            }
+            
+            if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                error_log( '[ATI DEBUG] ✅ Facebook Pixel caricato con successo' );
+            }
         } else {
             // ⚠️ Nessun consenso: Solo tracking server-side (senza cookie/pixel)
+            if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+                error_log( '[ATI DEBUG] ⚠️ Facebook Pixel NON caricato - nessun consenso marketing' );
+            }
             // Il JavaScript invierà comunque eventi al server per il server-side tracking
+        }
+    } else {
+        // DEBUG: Log perché Facebook non viene caricato
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            if ( ! $fb_enabled ) {
+                error_log( '[ATI DEBUG] ❌ Facebook NON caricato - funzione disabilitata' );
+            }
+            if ( empty( $fb_pixel_id ) ) {
+                error_log( '[ATI DEBUG] ❌ Facebook NON caricato - Pixel ID vuoto' );
+            }
         }
     }
 
@@ -86,6 +168,11 @@ function ati_output_tags() {
         })(window,document,'script','dataLayer','<?php echo esc_js( $gtm_id ); ?>');</script>
         <!-- End Google Tag Manager -->
         <?php
+    }
+    
+    // DEBUG: Log fine funzione
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] === FINE ati_output_tags() ===' );
     }
 }
 add_action( 'wp_head', 'ati_output_tags' );

@@ -16,12 +16,30 @@ if ( ! defined( 'ABSPATH' ) ) {
  * (il PageView viene gestito dal JavaScript unificato in tag-inserter.php).
  */
 function ati_output_facebook_pixel() {
+    // DEBUG: Log chiamata funzione
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] === CHIAMATA ati_output_facebook_pixel() ===' );
+    }
+    
     $fb_pixel_id = trim( get_option( 'ati_fb_pixel_id', '' ) );
+    
+    // DEBUG: Log Pixel ID
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] Facebook Pixel ID nel function: "' . $fb_pixel_id . '"' );
+    }
     
     // Verifica che l'ID pixel sia configurato
     if ( empty( $fb_pixel_id ) ) {
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[ATI DEBUG] ❌ Facebook Pixel ID VUOTO - uscita' );
+        }
         echo "<!-- Facebook Pixel: ID non configurato -->\n";
         return;
+    }
+    
+    // DEBUG: Log output del pixel
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] ✅ Generazione output Facebook Pixel per ID: ' . $fb_pixel_id );
     }
     ?>
     <!-- Facebook Pixel Code (Solo inizializzazione) -->
@@ -38,6 +56,13 @@ function ati_output_facebook_pixel() {
     fbq('init', '<?php echo esc_js( $fb_pixel_id ); ?>');
     
     console.log('[FST] 📘 Facebook Pixel inizializzato (consenso OK) - ID: <?php echo esc_js( $fb_pixel_id ); ?>');
+    
+    <?php
+    // DEBUG: Log completamento output
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] ✅ Facebook Pixel script output completato' );
+    }
+    ?>
     </script>
 
     <!-- Fallback noscript per browser senza JavaScript -->
