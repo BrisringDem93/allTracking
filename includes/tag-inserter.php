@@ -405,6 +405,28 @@ if (marketingConsent) {
   document.addEventListener('click', e => {
     const btn = e.target.closest('button, a');
     if (!btn) return;
+    
+    // ========================================
+    // ESCLUSIONI BUTTON CLICK
+    // ========================================
+    
+    // Esclude bottoni di submit dei form (già tracciati come Lead)
+    if (btn.type === 'submit' || btn.getAttribute('type') === 'submit') {
+      console.log('[FST] ButtonClick saltato - bottone submit (sarà tracciato come Lead):', btn);
+      return;
+    }
+    
+    // Esclude bottoni dentro form che hanno classi di submit
+    if (btn.closest('form') && (
+        btn.classList.contains('breakdance-form-button__submit') ||
+        btn.classList.contains('submit') ||
+        btn.classList.contains('form-submit') ||
+        btn.querySelector('.button-atom__text')?.textContent.includes('Richiedi')
+    )) {
+      console.log('[FST] ButtonClick saltato - bottone submit form (sarà tracciato come Lead):', btn);
+      return;
+    }
+    
     console.log('[FST] ButtonClick', btn);
     sendEvent({
       type: 'ButtonClick',
