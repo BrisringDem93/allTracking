@@ -53,22 +53,64 @@ function ati_output_facebook_pixel() {
     'https://connect.facebook.net/en_US/fbevents.js');
     
     // Inizializza il pixel con l'ID configurato
-    fbq('init', '<?php echo esc_js( $fb_pixel_id ); ?>');
+    fbq('init', '<?php echo esc_js( $fb_pixel_id ); ?>', {
+        autoConfig: false,    // Disabilita il tracciamento automatico
+        debug: <?php echo defined( 'WP_DEBUG' ) && WP_DEBUG ? 'true' : 'false'; ?>
+    });
+    
+    // Disabilita esplicitamente il tracciamento automatico degli eventi
+    fbq('set', 'autoConfig', false, '<?php echo esc_js( $fb_pixel_id ); ?>');
     
     console.log('[FST] 📘 Facebook Pixel inizializzato (consenso OK) - ID: <?php echo esc_js( $fb_pixel_id ); ?>');
+    console.log('[FST] 📘 Tracciamento automatico DISABILITATO - solo eventi manuali con eventID');
+    
+    // ========================================
+    // OVERRIDE fbq PER CONTROLLO eventID OBBLIGATORIO
+    // ========================================
+    // Salva la funzione originale di Facebook
+    window.original_fbq = window.fbq;
+    
+    // Crea wrapper che controlla la presenza di eventID
+    window.fbq = function(action, event, params, options) {
+        if (action === 'track' && event !== 'PageView') {
+            // Per tutti gli eventi tranne PageView, verifica che ci sia eventID
+            if (!options || !options.eventID) {
+                console.warn('[FST] ⚠️ Evento Facebook bloccato - manca eventID:', event, params);
+                return; // Blocca l'invio se manca eventID
+            }
+        } else if (action === 'track' && event === 'PageView') {
+            // Anche per PageView verifica eventID (opzionale ma consigliato)
+            if (!options || !options.eventID) {
+                console.warn('[FST] ⚠️ PageView Facebook senza eventID - potrebbe causare duplicati');
+            }
+        }
+        
+        // Se tutto OK, chiama la funzione originale
+        return window.original_fbq.apply(this, arguments);
+    };
+    
+    // Copia le proprietà della funzione originale
+    for (let prop in window.original_fbq) {
+        if (window.original_fbq.hasOwnProperty(prop)) {
+            window.fbq[prop] = window.original_fbq[prop];
+        }
+    }
+    
+    console.log('[FST] 📘 Facebook Pixel wrapper installato - eventID obbligatorio per tutti gli eventi');
     
     <?php
     // DEBUG: Log completamento output
     if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-        error_log( '[ATI DEBUG] ✅ Facebook Pixel script output completato' );
+        error_log( '[ATI DEBUG] ✅ Facebook Pixel script output completato con autoConfig=false e wrapper eventID' );
     }
     ?>
     </script>
 
     <!-- Fallback noscript per browser senza JavaScript -->
+    <!-- NOTA: Rimosso il PageView automatico dal noscript per evitare eventi duplicati -->
+    <!-- Il PageView viene gestito manualmente dal JavaScript con eventID -->
     <noscript>
-        <img height="1" width="1" style="display:none" 
-             src="https://www.facebook.com/tr?id=<?php echo esc_attr( $fb_pixel_id ); ?>&ev=PageView&noscript=1" />
+        <!-- Facebook Pixel noscript - solo per caricamento senza eventi automatici -->
     </noscript>
     <!-- End Facebook Pixel Code -->
     <?php

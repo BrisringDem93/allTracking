@@ -230,7 +230,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   console.log('[FST] Consenso marketing:', marketingConsent ? '✅ Consentito' : '❌ Non consentito');
   
   // ========================================
-  // FUNZIONI HELPER EVENT ID
+  // FUNZIONI HELPER EVENT ID E EXTERNAL ID
   // ========================================
   function getEventId() {
     const m = document.cookie.match(/(?:^|; )fst_ev_id=([^;]+)/);
@@ -245,6 +245,26 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     document.cookie = 'fst_ev_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
   }
   
+  // Genera o recupera external_id persistente (come lato server)
+  function getExternalId() {
+    const cookieName = 'fst_uid';
+    const match = document.cookie.match(new RegExp('(?:^|; )' + cookieName + '=([^;]+)'));
+    if (match) return decodeURIComponent(match[1]);
+    
+    // Se non esiste, genera UUID4 simile al server PHP
+    const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+      const r = Math.random() * 16 | 0;
+      const v = c == 'x' ? r : (r & 0x3 | 0x8);
+      return v.toString(16);
+    });
+    
+    // Salva cookie per 2 anni (come lato server)
+    const expires = new Date(Date.now() + 63072000 * 1000).toUTCString();
+    document.cookie = cookieName + '=' + encodeURIComponent(uuid) + '; expires=' + expires + '; path=/; SameSite=Lax';
+    
+    return uuid;
+  }
+  
   // ========================================
   // INVIO EVENTI (SERVER + FACEBOOK SE CONSENTITO)
   // ========================================
@@ -257,6 +277,48 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(payload)
     }).finally(clearEventId);
+    
+    // NUOVO: Se Facebook Pixel è attivo (consenso marketing + pixel inizializzato),
+    // invia anche a Facebook con stesso eventID per deduplica
+    if (marketingConsent && window.fbq && payload.type) {
+      let fbEventName = payload.type;
+      let fbParams = payload.customData || {};
+      
+      // Aggiunge external_id ai parametri per tracciabilità cross-platform
+      const externalId = getExternalId();
+      fbParams.external_id = externalId;
+      
+      // Mappa i tipi di eventi per Facebook Pixel standard
+      if (payload.type === 'ButtonClick') {
+        // Per i click sui bottoni, usiamo evento personalizzato
+        fbEventName = 'ButtonClick';
+      } else if (payload.type === 'FormStart') {
+        fbEventName = 'FormStart';
+      } else if (payload.type === 'Lead') {
+        fbEventName = 'Lead';
+      }
+      
+      // ========================================
+      // DEBUG DETTAGLIATO FACEBOOK PIXEL
+      // ========================================
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.group('[FST DEBUG] 📘 Facebook Pixel Event Details');
+      console.log('🎯 Event Name:', fbEventName);
+      console.log('🆔 Event ID:', payload.eventID);
+      console.log('👤 External ID:', externalId);
+      console.log('📊 Parameters:', fbParams);
+      console.log('📄 Payload originale:', payload);
+      console.log('🌐 URL:', window.location.href);
+      console.log('⏰ Timestamp:', new Date().toISOString());
+      console.groupEnd();
+<?php endif; ?>
+      
+      // Invia a Facebook Pixel con eventID per deduplica server/client
+      fbq('track', fbEventName, fbParams, {eventID: payload.eventID});
+      
+      console.log('[FST] 📘 Facebook Pixel event:', fbEventName, 'ID:', payload.eventID, 'External ID:', externalId);
+    }
+    
     return payload.eventID;
   }
   
@@ -292,12 +354,47 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       console.error('[FST] ⚠️ Errore server PageView:', err);
     });
   
-  // SOLO se c'è consenso: invia anche a Facebook Pixel client-side
-  if (marketingConsent && window.fbq) {
-    fbq('track', 'PageView', {}, {eventID: pageViewID});
-    console.log('[FST] 📘 Facebook Pixel PageView ID:', pageViewID);
+// SOLO se c'è consenso: invia anche a Facebook Pixel client-side
+if (marketingConsent) {
+  // Funzione per aspettare che fbq sia disponibile
+  function waitForFbq(callback, maxRetries = 20, retryCount = 0) {
+    if (window.fbq && typeof window.fbq === 'function') {
+      callback();
+    } else if (retryCount < maxRetries) {
+      setTimeout(() => waitForFbq(callback, maxRetries, retryCount + 1), 100);
+    } else {
+      console.log('[FST] ⚠️ Facebook Pixel (fbq) non disponibile dopo', maxRetries, 'tentativi');
+    }
   }
   
+  // Aspetta che fbq sia disponibile e poi invia PageView
+  waitForFbq(() => {
+    const externalId = getExternalId();
+    const pageViewParams = {
+      external_id: externalId
+    };
+    
+    // ========================================
+    // DEBUG DETTAGLIATO PAGEVIEW FACEBOOK PIXEL
+    // ========================================
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.group('[FST DEBUG] 📘 Facebook Pixel PageView Details');
+    console.log('🎯 Event Name: PageView');
+    console.log('🆔 Event ID:', pageViewID);
+    console.log('👤 External ID:', externalId);
+    console.log('📊 Parameters:', pageViewParams);
+    console.log('🌐 URL:', window.location.href);
+    console.log('📄 Page Title:', document.title);
+    console.log('⏰ Timestamp:', new Date().toISOString());
+    console.groupEnd();
+<?php endif; ?>
+    
+    fbq('track', 'PageView', pageViewParams, {eventID: pageViewID});
+    console.log('[FST] 📘 Facebook Pixel PageView ID:', pageViewID, 'External ID:', externalId);
+  });
+} else {
+  console.log('[FST] ⚠️ PageView Facebook Pixel saltato - nessun consenso marketing');
+}
   clearEventId();
 
   // ========================================
