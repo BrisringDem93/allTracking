@@ -177,7 +177,8 @@ function ati_output_tags() {
         error_log( '[ATI DEBUG] === FINE ati_output_tags() ===' );
     }
 }
-add_action( 'wp_head', 'ati_output_tags' );
+// HOOK RIMOSSO: ati_output_tags non viene più chiamato da wp_head per evitare problemi con le cache
+// add_action( 'wp_head', 'ati_output_tags' );
 
 /**
  * Output Google Tag Manager noscript after <body> tag.
@@ -230,6 +231,31 @@ function ati_ajax_reload_facebook_pixel() {
 add_action( 'wp_ajax_ati_reload_facebook_pixel', 'ati_ajax_reload_facebook_pixel' );
 add_action( 'wp_ajax_nopriv_ati_reload_facebook_pixel', 'ati_ajax_reload_facebook_pixel' );
 
+/**
+ * AJAX handler per caricare dinamicamente i tag di tracking
+ */
+function ati_ajax_load_tracking_tags() {
+    // Verifica nonce per sicurezza
+    if ( ! wp_verify_nonce( $_POST['nonce'] ?? '', 'ati_load_tags' ) ) {
+        wp_die( 'Nonce verification failed' );
+    }
+    
+    // Cattura l'output di ati_output_tags
+    ob_start();
+    ati_output_tags();
+    $tags_output = ob_get_clean();
+    
+    $response = array(
+        'success' => true,
+        'tags_html' => $tags_output,
+        'message' => 'Tags loaded successfully'
+    );
+    
+    wp_send_json( $response );
+}
+add_action( 'wp_ajax_ati_load_tracking_tags', 'ati_ajax_load_tracking_tags' );
+add_action( 'wp_ajax_nopriv_ati_load_tracking_tags', 'ati_ajax_load_tracking_tags' );
+
 
 add_action( 'wp_footer', 'fst_inline_tracking_js', 100 );
 function fst_inline_tracking_js() { ?>
@@ -244,6 +270,65 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   const endpoint = '<?php echo esc_js( home_url( '/wp-json/fst/v1/event' ) ); ?>';
   const ajaxUrl = window.fstAjaxUrl;
   window.consentCookieName = '<?php echo esc_js( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?>';
+  
+  // ========================================
+  // CARICAMENTO DINAMICO TAG DI TRACKING
+  // ========================================
+  
+  // Carica dinamicamente i tag di tracking (GA4, GTM, Facebook Pixel se consenso)
+  function loadTrackingTags() {
+    console.log('[FST] 🔄 Caricamento dinamico tag di tracking...');
+    
+    fetch(ajaxUrl, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({
+        action: 'ati_load_tracking_tags',
+        nonce: '<?php echo wp_create_nonce( "ati_load_tags" ); ?>'
+      })
+    }).then(response => response.json())
+      .then(data => {
+        if (data.success && data.tags_html) {
+          // Inserisce i tag nell'head
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = data.tags_html;
+          
+          // Sposta tutti gli script e link nell'head
+          const scripts = tempDiv.querySelectorAll('script');
+          const links = tempDiv.querySelectorAll('link');
+          
+          scripts.forEach(script => {
+            const newScript = document.createElement('script');
+            if (script.src) {
+              newScript.src = script.src;
+              newScript.async = script.async;
+            } else {
+              newScript.textContent = script.textContent;
+            }
+            document.head.appendChild(newScript);
+          });
+          
+          links.forEach(link => {
+            document.head.appendChild(link.cloneNode(true));
+          });
+          
+          console.log('[FST] ✅ Tag di tracking caricati dinamicamente');
+        } else {
+          console.log('[FST] ⚠️ Nessun tag da caricare:', data.message);
+        }
+      })
+      .catch(err => {
+        console.error('[FST] ❌ Errore caricamento tag:', err);
+      });
+  }
+  
+  // Carica i tag immediatamente al DOMContentLoaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadTrackingTags);
+  } else {
+    loadTrackingTags();
+  }
   
   // ========================================
   // CONTROLLO CONSENSO COOKIE GDPR
