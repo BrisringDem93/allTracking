@@ -471,6 +471,8 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   }
   window.hasMarketingConsent = hasMarketingConsent;
 
+  const fbPixelScriptUrl = '<?php echo esc_js( plugin_dir_url( __FILE__ ) . '../assets/js/facebook-pixel.js' ); ?>';
+
   function loadFacebookPixelDynamically(){
     if(window.fbq){
       console.log('[FST] ✅ Facebook Pixel già caricato');
@@ -489,9 +491,17 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     }).then(r=>r.json()).then(data=>{
       if(data.success && data.pixel_id){
         console.log('[FST] 🔄 Caricamento dinamico Facebook Pixel ID:', data.pixel_id);
-        !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
-        fbq('init', data.pixel_id);
-        fbq('track', 'PageView');
+        window.atiFbPixelId = data.pixel_id;
+        window.atiFbPixelDebug = <?php echo defined( 'WP_DEBUG' ) && WP_DEBUG ? 'true' : 'false'; ?>;
+        const s = document.createElement('script');
+        s.defer = true;
+        s.src = fbPixelScriptUrl;
+        s.onload = function(){
+          if(window.fbq){
+            fbq('track', 'PageView');
+          }
+        };
+        document.head.appendChild(s);
         console.log('[FST] ✅ Facebook Pixel caricato dinamicamente');
       }else{
         console.log('[FST] ⚠️ Facebook Pixel non caricato:', data.message);
