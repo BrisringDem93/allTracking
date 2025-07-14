@@ -31,4 +31,21 @@
   console.log('[FST] 📘 Facebook Pixel inizializzato (consenso OK) - ID:', pixelId);
   console.log('[FST] 📘 Tracciamento automatico DISABILITATO - solo eventi manuali con eventID');
 
+  // Blocca gli eventi privi di eventID per evitare duplicazioni
+  const realFbq = window.fbq;
+  function guardedFbq() {
+    const cmd = arguments[0];
+    if ((cmd === 'track' || cmd === 'trackCustom') && (!arguments[3] || !arguments[3].eventID)) {
+      console.warn('[FST] Evento bloccato - eventID mancante per', arguments[1]);
+      return;
+    }
+    return realFbq.apply(this, arguments);
+  }
+  guardedFbq.callMethod = realFbq.callMethod;
+  guardedFbq.queue = realFbq.queue;
+  guardedFbq.loaded = realFbq.loaded;
+  guardedFbq.version = realFbq.version;
+  guardedFbq.push = realFbq.push.bind(realFbq);
+  window.fbq = guardedFbq;
+
 })();
