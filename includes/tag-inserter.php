@@ -466,7 +466,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // ========================================
 })();
 </script>
-<script type="text/plain" data-category="marketing">
+<script data-category="marketing">
 (function(){
   const consentCookie = window.consentCookieName || 'cmplz_marketing';
 
