@@ -31,26 +31,4 @@
   console.log('[FST] 📘 Facebook Pixel inizializzato (consenso OK) - ID:', pixelId);
   console.log('[FST] 📘 Tracciamento automatico DISABILITATO - solo eventi manuali con eventID');
 
-  // 🔐 Salva una copia del fbq PRIMA di wrappare
-  const rawFbq = window.fbq;
-
-  // Wrappa fbq per bloccare eventi senza eventID
-  window.fbq = function (action, event, params, options) {
-    if (action === 'track') {
-      if (!options || !options.eventID) {
-        console.warn('[FST] ❌ Evento Facebook bloccato - manca eventID:', event, params);
-        return; // Blocca l'invio
-      }
-    }
-    return rawFbq.apply(this, arguments);
-  };
-
-  // Copia le proprietà
-  for (let prop in rawFbq) {
-    if (rawFbq.hasOwnProperty(prop)) {
-      window.fbq[prop] = rawFbq[prop];
-    }
-  }
-
-  console.log('[FST] 📘 Facebook Pixel wrapper installato - eventID obbligatorio per tutti gli eventi');
 })();
