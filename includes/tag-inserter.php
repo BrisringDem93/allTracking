@@ -192,6 +192,42 @@ function ati_output_gtm_noscript() {
 }
 add_action( 'wp_body_open', 'ati_output_gtm_noscript' );
 
+/**
+ * AJAX handler per ricaricare Facebook Pixel quando cambia il consenso
+ */
+function ati_ajax_reload_facebook_pixel() {
+    // Verifica nonce per sicurezza
+    if ( ! wp_verify_nonce( $_POST['nonce'] ?? '', 'ati_reload_pixel' ) ) {
+        wp_die( 'Nonce verification failed' );
+    }
+    
+    // Controlla se il consenso marketing è attivo
+    $has_marketing_consent = ati_has_marketing_consent();
+    
+    $response = array(
+        'success' => false,
+        'has_consent' => $has_marketing_consent,
+        'pixel_id' => '',
+        'message' => ''
+    );
+    
+    // Se c'è consenso e Facebook è abilitato, restituisci il Pixel ID
+    $fb_enabled  = get_option( 'ati_enable_fb', false );
+    $fb_pixel_id = trim( get_option( 'ati_fb_pixel_id', '' ) );
+    
+    if ( $has_marketing_consent && $fb_enabled && ! empty( $fb_pixel_id ) ) {
+        $response['success'] = true;
+        $response['pixel_id'] = $fb_pixel_id;
+        $response['message'] = 'Facebook Pixel can be loaded';
+    } else {
+        $response['message'] = 'Facebook Pixel should not be loaded';
+    }
+    
+    wp_send_json( $response );
+}
+add_action( 'wp_ajax_ati_reload_facebook_pixel', 'ati_ajax_reload_facebook_pixel' );
+add_action( 'wp_ajax_nopriv_ati_reload_facebook_pixel', 'ati_ajax_reload_facebook_pixel' );
+
 
 add_action( 'wp_footer', 'fst_inline_tracking_js', 100 );
 function fst_inline_tracking_js() { ?>
@@ -200,6 +236,86 @@ function fst_inline_tracking_js() { ?>
 // VARIABILI GLOBALI E SETUP
 // ========================================
 window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
+
+// ========================================
+// LISTENER CAMBIO CONSENSO COMPLIANZ
+// ========================================
+function setupConsentListener() {
+  let currentConsent = hasMarketingConsent();
+  
+  // Monitora cambiamenti nel cookie cmplz_marketing ogni 500ms
+  setInterval(() => {
+    const newConsent = hasMarketingConsent();
+    if (newConsent !== currentConsent) {
+      console.log('[FST] 🔄 Cambio consenso rilevato:', currentConsent, '->', newConsent);
+      currentConsent = newConsent;
+      
+      if (newConsent) {
+        // Consenso dato: carica Facebook Pixel dinamicamente
+        loadFacebookPixelDynamically();
+      } else {
+        // Consenso revocato: rimuovi Facebook Pixel
+        removeFacebookPixel();
+      }
+    }
+  }, 500);
+}
+
+function loadFacebookPixelDynamically() {
+  if (window.fbq) {
+    console.log('[FST] ✅ Facebook Pixel già caricato');
+    return;
+  }
+  
+  console.log('[FST] 🔄 Verifica consenso via AJAX...');
+  
+  // Chiama il server per verificare se caricare Facebook Pixel
+  fetch(window.fstAjaxUrl, {
+    method: 'POST',
+    credentials: 'same-origin',
+    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+    body: new URLSearchParams({
+      action: 'ati_reload_facebook_pixel',
+      nonce: '<?php echo wp_create_nonce( "ati_reload_pixel" ); ?>'
+    })
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.success && data.pixel_id) {
+      console.log('[FST] 🔄 Caricamento dinamico Facebook Pixel ID:', data.pixel_id);
+      
+      // Carica lo script Facebook Pixel
+      !function(f,b,e,v,n,t,s)
+      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
+      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
+      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
+      n.queue=[];t=b.createElement(e);t.async=!0;
+      t.src=v;s=b.getElementsByTagName(e)[0];
+      s.parentNode.insertBefore(t,s)}(window,document,'script',
+      'https://connect.facebook.net/en_US/fbevents.js');
+      
+      fbq('init', data.pixel_id);
+      fbq('track', 'PageView');
+      
+      console.log('[FST] ✅ Facebook Pixel caricato dinamicamente');
+    } else {
+      console.log('[FST] ⚠️ Facebook Pixel non caricato:', data.message);
+    }
+  })
+  .catch(err => {
+    console.error('[FST] ❌ Errore caricamento Facebook Pixel:', err);
+  });
+}
+
+function removeFacebookPixel() {
+  if (window.fbq) {
+    console.log('[FST] 🔄 Rimozione Facebook Pixel...');
+    // Non possiamo completamente rimuovere fbq, ma possiamo disabilitarlo
+    window.fbq = function() {
+      console.log('[FST] ⚠️ Facebook Pixel disabilitato - consenso revocato');
+    };
+  }
+}
 
 (function () {
   const endpoint = '<?php echo esc_js( home_url( '/wp-json/fst/v1/event' ) ); ?>';
@@ -461,6 +577,11 @@ if (marketingConsent) {
       customData: { form_name: form.id || 'unnamed' }
     });
   });
+  
+  // ========================================
+  // INIZIALIZZAZIONE LISTENER CONSENSO
+  // ========================================
+  setupConsentListener();
 })();
 </script>
 <?php } ?>
