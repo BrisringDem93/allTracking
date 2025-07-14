@@ -393,6 +393,35 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     .catch(err => {
       console.error('[FST] ⚠️ Errore server PageView:', err);
     });
+
+  // Invia PageView a Facebook Pixel se il consenso è dato
+  if (window.marketingConsent && window.fbq) {
+    console.log('[FST] 📘 Invia PageView a Facebook Pixel');
+    fbq('track', 'PageView', {}, {eventID: pageViewID});
+  } else if (!window.fbq && window.marketingConsent) {
+    // Se fbq non è definito, significa che il Pixel non è stato caricato, ritentiamo fino a 3 tentativi ogni 500ms
+    let attempts = 0;
+    const maxAttempts = 3;
+    const interval = setInterval(() => {
+      if (window.fbq) {
+        console.log('[FST] 📘 Facebook Pixel caricato, invio PageView');
+        fbq('track', 'PageView', {}, {eventID: pageViewID});
+        // log dettagli se WP_DEBUG è true
+        <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+        console.log('🎯 Page View Event ID:', pageViewID);
+        console.log('🌐 URL:', window.location.href);
+        console.log('📄 Page Title:', document.title);
+        <?php endif; ?>
+        
+        clearInterval(interval);
+      } else if (++attempts === maxAttempts) {
+        console.warn('[FST] ⚠️ Facebook Pixel non caricato dopo 3 tentativi');
+        clearInterval(interval);
+      }
+    }, 500);
+  } else {
+    console.warn('[FST] ⚠️ Facebook Pixel PageView non inviato - nessun consenso marketing');
+  }
   
   clearEventId();
 
@@ -503,7 +532,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
         s.src = fbPixelScriptUrl;
         s.onload = function(){
           if(window.fbq){
-            fbq('track', 'PageView');
+             fbq('track', fbEventName, fbParams, {eventID: payload.eventID});
           }
         };
         document.head.appendChild(s);
@@ -553,9 +582,13 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   });
 
   window.marketingConsent = hasMarketingConsent();
-  if(window.marketingConsent){
-    loadFacebookPixelDynamically();
-  }
+  
+  // TRIGGER 1 DISABILITATO: Non caricare automaticamente Facebook Pixel al caricamento pagina
+  // Il pixel verrà caricato solo tramite eventi di cambio consenso o eventi Complianz
+  // if(window.marketingConsent){
+  //   loadFacebookPixelDynamically();
+  // }
+  
   setupConsentListener();
 })();
 </script>

@@ -8,6 +8,9 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+
+
+
 /**
  * Output Facebook Pixel code.
  * 
