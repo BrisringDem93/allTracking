@@ -531,9 +531,6 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
         s.defer = true;
         s.src = fbPixelScriptUrl;
         s.onload = function(){
-          if(window.fbq){
-             fbq('track', fbEventName, fbParams, {eventID: payload.eventID});
-          }
         };
         document.head.appendChild(s);
         console.log('[FST] ✅ Facebook Pixel caricato dinamicamente');
