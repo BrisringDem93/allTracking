@@ -352,6 +352,11 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       fbq('track', fbEventName, fbParams, {eventID: payload.eventID});
       
       console.log('[FST] 📘 Facebook Pixel event:', fbEventName, 'ID:', payload.eventID, 'External ID:', externalId);
+    } else if (!window.fbq) {
+      // Se fbq non è definito, significa che il Pixel non è stato caricato
+      console.warn('[FST] ⚠️ Facebook Pixel non caricato - consenso mancante o script non inizializzato');
+    } else {
+      console.warn('[FST] ⚠️ Facebook Pixel non inviato - nessun consenso marketing o evento non tracciato');
     }
     
     return payload.eventID;
