@@ -20,6 +20,7 @@ function ati_register_settings() {
     register_setting( 'ati_settings', 'ati_enable_ga4', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_enable_gtm', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_disable_logged_in', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+    register_setting( 'ati_settings', 'ati_consent_cookie_name', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => 'cmplz_marketing' ) );
     register_setting( 'ati_settings', 'ati_server_endpoint', array( 'sanitize_callback' => 'esc_url_raw' ) );
     register_setting( 'ati_settings', 'ati_server_auth_key', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_server_auth_value', array( 'sanitize_callback' => 'sanitize_text_field' ) );
@@ -84,6 +85,13 @@ function ati_settings_page() {
                         </fieldset>
                     </td>
                 </tr>
+                <tr>
+                    <th scope="row"><label for="ati_consent_cookie_name">Nome cookie consenso</label></th>
+                    <td>
+                        <input name="ati_consent_cookie_name" type="text" id="ati_consent_cookie_name" value="<?php echo esc_attr( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?>" class="regular-text" />
+                        <p class="description">Cookie utilizzato per verificare il consenso marketing</p>
+                    </td>
+                </tr>
             </table>
 
             <h2><?php esc_html_e( 'Impostazioni Server-Side Tracking', 'ati' ); ?></h2>
@@ -141,16 +149,17 @@ function ati_settings_page() {
                         <span id="consent-status">
                             <script>
                             (function(){
-                                const match = document.cookie.match(/(?:^|; )cmplz_marketing=([^;]+)/);
+                                const cookieName = '<?php echo esc_js( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?>';
+                                const match = document.cookie.match(new RegExp('(?:^|; )' + cookieName + '=([^;]+)'));
                                 const hasConsent = match && match[1] === 'allow';
-                                document.getElementById('consent-status').innerHTML = hasConsent ? 
-                                    '<span style="color: green;">✅ Consenso marketing attivo</span>' : 
+                                document.getElementById('consent-status').innerHTML = hasConsent ?
+                                    '<span style="color: green;">✅ Consenso marketing attivo</span>' :
                                     '<span style="color: orange;">⚠️ Consenso marketing non rilevato</span>';
                             })();
                             </script>
                         </span>
                         <p class="description">
-                            Il plugin rispetta il cookie <code>cmplz_marketing</code>. 
+                            Il plugin rispetta il cookie <code><?php echo esc_html( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?></code>.
                             Solo con consenso = "allow" vengono caricati i pixel client-side.
                         </p>
                     </td>

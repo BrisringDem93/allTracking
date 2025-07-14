@@ -10,7 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 /**
  * Controlla se il consenso marketing è stato dato dall'utente
  * 
- * Verifica il cookie cmplz_marketing che viene settato da Complianz
+ * Verifica il cookie di consenso (es. cmplz_marketing) che viene settato da Complianz
  * o altri plugin di gestione cookie GDPR.
  * 
  * @return bool True se il consenso è stato dato, False altrimenti
@@ -21,19 +21,21 @@ function ati_has_marketing_consent() {
         error_log( '[ATI DEBUG] === CONTROLLO CONSENSO MARKETING ===' );
         error_log( '[ATI DEBUG] Cookie disponibili: ' . json_encode( $_COOKIE ) );
     }
-    
-    // Controlla il cookie cmplz_marketing
-    if ( isset( $_COOKIE['cmplz_marketing'] ) ) {
-        $consent_value = $_COOKIE['cmplz_marketing'];
+
+    $cookie_name = get_option( 'ati_consent_cookie_name', 'cmplz_marketing' );
+
+    // Controlla il cookie definito nelle impostazioni
+    if ( isset( $_COOKIE[ $cookie_name ] ) ) {
+        $consent_value = $_COOKIE[ $cookie_name ];
         if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-            error_log( '[ATI DEBUG] Cookie cmplz_marketing trovato: ' . $consent_value );
+            error_log( '[ATI DEBUG] Cookie ' . $cookie_name . ' trovato: ' . $consent_value );
             error_log( '[ATI DEBUG] Consenso valido: ' . ( $consent_value === 'allow' ? 'SI' : 'NO' ) );
         }
         return $consent_value === 'allow';
     }
-    
+
     if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-        error_log( '[ATI DEBUG] Cookie cmplz_marketing NON trovato' );
+        error_log( '[ATI DEBUG] Cookie ' . $cookie_name . ' NON trovato' );
     }
     // Se il cookie non esiste, assumiamo nessun consenso per sicurezza GDPR
     return false;
@@ -43,7 +45,7 @@ function ati_has_marketing_consent() {
  * Output tracking tags in the site head.
  * 
  * Controlla i consensi cookie prima di inserire gli script di tracking.
- * Se cmplz_marketing != 'allow', inserisce solo il tracking server-side.
+ * Se il cookie di consenso non vale "allow", inserisce solo il tracking server-side.
  */
 function ati_output_tags() {
     // DEBUG: Log inizio funzione
@@ -235,91 +237,13 @@ function fst_inline_tracking_js() { ?>
 // ========================================
 // VARIABILI GLOBALI E SETUP
 // ========================================
+
 window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
-
-// ========================================
-// LISTENER CAMBIO CONSENSO COMPLIANZ
-// ========================================
-function setupConsentListener() {
-  let currentConsent = hasMarketingConsent();
-  
-  // Monitora cambiamenti nel cookie cmplz_marketing ogni 500ms
-  setInterval(() => {
-    const newConsent = hasMarketingConsent();
-    if (newConsent !== currentConsent) {
-      console.log('[FST] 🔄 Cambio consenso rilevato:', currentConsent, '->', newConsent);
-      currentConsent = newConsent;
-      
-      if (newConsent) {
-        // Consenso dato: carica Facebook Pixel dinamicamente
-        loadFacebookPixelDynamically();
-      } else {
-        // Consenso revocato: rimuovi Facebook Pixel
-        removeFacebookPixel();
-      }
-    }
-  }, 500);
-}
-
-function loadFacebookPixelDynamically() {
-  if (window.fbq) {
-    console.log('[FST] ✅ Facebook Pixel già caricato');
-    return;
-  }
-  
-  console.log('[FST] 🔄 Verifica consenso via AJAX...');
-  
-  // Chiama il server per verificare se caricare Facebook Pixel
-  fetch(window.fstAjaxUrl, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: new URLSearchParams({
-      action: 'ati_reload_facebook_pixel',
-      nonce: '<?php echo wp_create_nonce( "ati_reload_pixel" ); ?>'
-    })
-  })
-  .then(response => response.json())
-  .then(data => {
-    if (data.success && data.pixel_id) {
-      console.log('[FST] 🔄 Caricamento dinamico Facebook Pixel ID:', data.pixel_id);
-      
-      // Carica lo script Facebook Pixel
-      !function(f,b,e,v,n,t,s)
-      {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-      n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-      if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-      n.queue=[];t=b.createElement(e);t.async=!0;
-      t.src=v;s=b.getElementsByTagName(e)[0];
-      s.parentNode.insertBefore(t,s)}(window,document,'script',
-      'https://connect.facebook.net/en_US/fbevents.js');
-      
-      fbq('init', data.pixel_id);
-      fbq('track', 'PageView');
-      
-      console.log('[FST] ✅ Facebook Pixel caricato dinamicamente');
-    } else {
-      console.log('[FST] ⚠️ Facebook Pixel non caricato:', data.message);
-    }
-  })
-  .catch(err => {
-    console.error('[FST] ❌ Errore caricamento Facebook Pixel:', err);
-  });
-}
-
-function removeFacebookPixel() {
-  if (window.fbq) {
-    console.log('[FST] 🔄 Rimozione Facebook Pixel...');
-    // Non possiamo completamente rimuovere fbq, ma possiamo disabilitarlo
-    window.fbq = function() {
-      console.log('[FST] ⚠️ Facebook Pixel disabilitato - consenso revocato');
-    };
-  }
-}
 
 (function () {
   const endpoint = '<?php echo esc_js( home_url( '/wp-json/fst/v1/event' ) ); ?>';
   const ajaxUrl = window.fstAjaxUrl;
+  window.consentCookieName = '<?php echo esc_js( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?>';
   
   // ========================================
   // CONTROLLO CONSENSO COOKIE GDPR
@@ -328,22 +252,17 @@ function removeFacebookPixel() {
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
   // Blocco di debug per il cookie Complianz (visibile solo con WP_DEBUG attivo)
   console.log('[FST DEBUG] Controllo cookie Complianz...');
-  const complianzCookie = document.cookie.split('; ').find(row => row.startsWith('cmplz_marketing='));
+  const complianzCookie = document.cookie.split('; ').find(row => row.startsWith(window.consentCookieName + '='));
   if (complianzCookie) {
-    console.log('[FST DEBUG] Cookie cmplz_marketing trovato:', complianzCookie);
+    console.log('[FST DEBUG] Cookie ' + window.consentCookieName + ' trovato:', complianzCookie);
     console.log('[FST DEBUG] Valore del cookie:', complianzCookie.split('=')[1]);
   } else {
-    console.log('[FST DEBUG] Cookie cmplz_marketing non trovato.');
+    console.log('[FST DEBUG] Cookie ' + window.consentCookieName + ' non trovato.');
   }
 <?php endif; ?>
 
-  function hasMarketingConsent() {
-    const match = document.cookie.match(/(?:^|; )cmplz_marketing=([^;]+)/);
-    return match && match[1] === 'allow';
-  }
-  
-  const marketingConsent = hasMarketingConsent();
-  console.log('[FST] Consenso marketing:', marketingConsent ? '✅ Consentito' : '❌ Non consentito');
+  window.marketingConsent = document.cookie.match(new RegExp('(?:^|; )' + window.consentCookieName + '=([^;]+)'))?.[1] === 'allow';
+  console.log('[FST] Consenso marketing:', window.marketingConsent ? '✅ Consentito' : '❌ Non consentito');
   
   // ========================================
   // FUNZIONI HELPER EVENT ID E EXTERNAL ID
@@ -396,7 +315,7 @@ function removeFacebookPixel() {
     
     // NUOVO: Se Facebook Pixel è attivo (consenso marketing + pixel inizializzato),
     // invia anche a Facebook con stesso eventID per deduplica
-    if (marketingConsent && window.fbq && payload.type) {
+    if (window.marketingConsent && window.fbq && payload.type) {
       let fbEventName = payload.type;
       let fbParams = payload.customData || {};
       
@@ -470,47 +389,6 @@ function removeFacebookPixel() {
       console.error('[FST] ⚠️ Errore server PageView:', err);
     });
   
-// SOLO se c'è consenso: invia anche a Facebook Pixel client-side
-if (marketingConsent) {
-  // Funzione per aspettare che fbq sia disponibile
-  function waitForFbq(callback, maxRetries = 20, retryCount = 0) {
-    if (window.fbq && typeof window.fbq === 'function') {
-      callback();
-    } else if (retryCount < maxRetries) {
-      setTimeout(() => waitForFbq(callback, maxRetries, retryCount + 1), 100);
-    } else {
-      console.log('[FST] ⚠️ Facebook Pixel (fbq) non disponibile dopo', maxRetries, 'tentativi');
-    }
-  }
-  
-  // Aspetta che fbq sia disponibile e poi invia PageView
-  waitForFbq(() => {
-    const externalId = getExternalId();
-    const pageViewParams = {
-      external_id: externalId
-    };
-    
-    // ========================================
-    // DEBUG DETTAGLIATO PAGEVIEW FACEBOOK PIXEL
-    // ========================================
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    console.group('[FST DEBUG] 📘 Facebook Pixel PageView Details');
-    console.log('🎯 Event Name: PageView');
-    console.log('🆔 Event ID:', pageViewID);
-    console.log('👤 External ID:', externalId);
-    console.log('📊 Parameters:', pageViewParams);
-    console.log('🌐 URL:', window.location.href);
-    console.log('📄 Page Title:', document.title);
-    console.log('⏰ Timestamp:', new Date().toISOString());
-    console.groupEnd();
-<?php endif; ?>
-    
-    fbq('track', 'PageView', pageViewParams, {eventID: pageViewID});
-    console.log('[FST] 📘 Facebook Pixel PageView ID:', pageViewID, 'External ID:', externalId);
-  });
-} else {
-  console.log('[FST] ⚠️ PageView Facebook Pixel saltato - nessun consenso marketing');
-}
   clearEventId();
 
   // ========================================
@@ -581,6 +459,88 @@ if (marketingConsent) {
   // ========================================
   // INIZIALIZZAZIONE LISTENER CONSENSO
   // ========================================
+})();
+</script>
+<script type="text/plain" data-category="marketing">
+(function(){
+  const consentCookie = window.consentCookieName || 'cmplz_marketing';
+
+  function hasMarketingConsent(){
+    const match = document.cookie.match(new RegExp('(?:^|; )' + consentCookie + '=([^;]+)'));
+    return match && match[1] === 'allow';
+  }
+  window.hasMarketingConsent = hasMarketingConsent;
+
+  function loadFacebookPixelDynamically(){
+    if(window.fbq){
+      console.log('[FST] ✅ Facebook Pixel già caricato');
+      return;
+    }
+
+    console.log('[FST] 🔄 Verifica consenso via AJAX...');
+    fetch(window.fstAjaxUrl, {
+      method:'POST',
+      credentials:'same-origin',
+      headers:{'Content-Type':'application/x-www-form-urlencoded'},
+      body:new URLSearchParams({
+        action:'ati_reload_facebook_pixel',
+        nonce:'<?php echo wp_create_nonce( "ati_reload_pixel" ); ?>'
+      })
+    }).then(r=>r.json()).then(data=>{
+      if(data.success && data.pixel_id){
+        console.log('[FST] 🔄 Caricamento dinamico Facebook Pixel ID:', data.pixel_id);
+        !function(f,b,e,v,n,t,s){if(f.fbq)return;n=f.fbq=function(){n.callMethod?n.callMethod.apply(n,arguments):n.queue.push(arguments)};if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';n.queue=[];t=b.createElement(e);t.async=!0;t.src=v;s=b.getElementsByTagName(e)[0];s.parentNode.insertBefore(t,s)}(window,document,'script','https://connect.facebook.net/en_US/fbevents.js');
+        fbq('init', data.pixel_id);
+        fbq('track', 'PageView');
+        console.log('[FST] ✅ Facebook Pixel caricato dinamicamente');
+      }else{
+        console.log('[FST] ⚠️ Facebook Pixel non caricato:', data.message);
+      }
+    }).catch(err=>{
+      console.error('[FST] ❌ Errore caricamento Facebook Pixel:', err);
+    });
+  }
+
+  function removeFacebookPixel(){
+    if(window.fbq){
+      console.log('[FST] 🔄 Rimozione Facebook Pixel...');
+      window.fbq = function(){
+        console.log('[FST] ⚠️ Facebook Pixel disabilitato - consenso revocato');
+      };
+    }
+  }
+
+  function setupConsentListener(){
+    let currentConsent = hasMarketingConsent();
+    setInterval(()=>{
+      const newConsent = hasMarketingConsent();
+      if(newConsent !== currentConsent){
+        console.log('[FST] 🔄 Cambio consenso rilevato:', currentConsent, '->', newConsent);
+        currentConsent = newConsent;
+        window.marketingConsent = newConsent;
+        if(newConsent){
+          loadFacebookPixelDynamically();
+        }else{
+          removeFacebookPixel();
+        }
+      }
+    },500);
+  }
+
+  document.addEventListener('cmplz_marketing_accept', () => {
+    window.marketingConsent = true;
+    loadFacebookPixelDynamically();
+  });
+
+  document.addEventListener('cmplz_marketing_decline', () => {
+    window.marketingConsent = false;
+    removeFacebookPixel();
+  });
+
+  window.marketingConsent = hasMarketingConsent();
+  if(window.marketingConsent){
+    loadFacebookPixelDynamically();
+  }
   setupConsentListener();
 })();
 </script>
