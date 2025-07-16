@@ -537,9 +537,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php endif; ?>
     fbq('track', 'PageView', {}, {eventID: pageViewID});
   } else if (!window.fbq && window.marketingConsent) {
-    // Se fbq non è definito, significa che il Pixel non è stato caricato, ritentiamo fino a 3 tentativi ogni 500ms
+    // Se fbq non è definito, significa che il Pixel non è stato caricato, ritentiamo fino a 5 tentativi ogni 500ms
     let attempts = 0;
-    const maxAttempts = 3;
+    const maxAttempts = 5;
     const interval = setInterval(() => {
       if (window.fbq) {
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
