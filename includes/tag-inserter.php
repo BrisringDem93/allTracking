@@ -204,6 +204,17 @@ function ati_ajax_reload_facebook_pixel() {
         wp_die( 'Nonce verification failed' );
     }
     
+    // NUOVO: Blocca completamente se utenti loggati sono disabilitati
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        $response = array(
+            'success' => false,
+            'has_consent' => false,
+            'pixel_id' => '',
+            'message' => 'Tracking disabilitato per utenti loggati'
+        );
+        wp_send_json( $response );
+    }
+    
     // Controlla se il consenso marketing è attivo
     $has_marketing_consent = ati_has_marketing_consent();
     
@@ -240,6 +251,16 @@ function ati_ajax_load_tracking_tags() {
         wp_die( 'Nonce verification failed' );
     }
     
+    // NUOVO: Blocca completamente se utenti loggati sono disabilitati
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        $response = array(
+            'success' => false,
+            'tags_html' => '',
+            'message' => 'Tracking disabilitato per utenti loggati'
+        );
+        wp_send_json( $response );
+    }
+    
     // Cattura l'output di ati_output_tags
     ob_start();
     ati_output_tags();
@@ -258,7 +279,13 @@ add_action( 'wp_ajax_nopriv_ati_load_tracking_tags', 'ati_ajax_load_tracking_tag
 
 
 add_action( 'wp_footer', 'fst_inline_tracking_js', 100 );
-function fst_inline_tracking_js() { ?>
+function fst_inline_tracking_js() { 
+    // Controllo server-side: se utenti loggati sono disabilitati, non caricare nemmeno JavaScript
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        echo '<!-- Tracking disabilitato per utenti loggati -->';
+        return;
+    }
+    ?>
 <script>
 // ========================================
 // VARIABILI GLOBALI E SETUP
