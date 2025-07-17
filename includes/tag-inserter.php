@@ -556,7 +556,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
         clearInterval(interval);
       } else if (++attempts === maxAttempts) {
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-        console.warn('[FST] ⚠️ Facebook Pixel non caricato dopo 3 tentativi');
+        console.warn('[FST] ⚠️ Facebook Pixel non caricato dopo 5 tentativi');
 <?php endif; ?>
         clearInterval(interval);
       }
