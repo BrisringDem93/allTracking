@@ -100,6 +100,14 @@ if ( WP_DEBUG ) {
  */
 
 function fst_ajax_pageview_handler() {
+    // STEP 0: Controllo utenti loggati - blocca tutto se disabilitato
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        if ( WP_DEBUG ) {
+            error_log( '[FST] ❌ PageView AJAX bloccato - utente loggato' );
+        }
+        wp_die( 'Tracking disabilitato per utenti loggati' );
+    }
+    
     // STEP 1: Log di debug per verificare che la funzione venga chiamata
     if ( WP_DEBUG ) {
         error_log( '[FST] 🎯 AJAX PageView handler chiamato' );
@@ -193,6 +201,17 @@ add_action( 'rest_api_init', function() {
  */
 
 function fst_rest_event_handler( WP_REST_Request $req ) {
+    // STEP 0: Controllo utenti loggati - blocca tutto se disabilitato
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        if ( WP_DEBUG ) {
+            error_log( '[FST] ❌ REST Event bloccato - utente loggato' );
+        }
+        return rest_ensure_response( [
+            'status' => 'disabled',
+            'message' => 'Tracking disabilitato per utenti loggati'
+        ] );
+    }
+    
     // STEP 1: Estrae e sanitizza i parametri base della richiesta
     $type    = sanitize_text_field( $req->get_param( 'type' ) );  // Tipo evento (ButtonClick, FormStart, etc.)
     $label   = sanitize_text_field( $req->get_param( 'label' ) ); // Etichetta descrittiva (es: "Download PDF")

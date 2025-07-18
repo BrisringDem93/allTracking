@@ -177,7 +177,8 @@ function ati_output_tags() {
         error_log( '[ATI DEBUG] === FINE ati_output_tags() ===' );
     }
 }
-add_action( 'wp_head', 'ati_output_tags' );
+// HOOK RIMOSSO: ati_output_tags non viene più chiamato da wp_head per evitare problemi con le cache
+// add_action( 'wp_head', 'ati_output_tags' );
 
 /**
  * Output Google Tag Manager noscript after <body> tag.
@@ -201,6 +202,17 @@ function ati_ajax_reload_facebook_pixel() {
     // Verifica nonce per sicurezza
     if ( ! wp_verify_nonce( $_POST['nonce'] ?? '', 'ati_reload_pixel' ) ) {
         wp_die( 'Nonce verification failed' );
+    }
+    
+    // NUOVO: Blocca completamente se utenti loggati sono disabilitati
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        $response = array(
+            'success' => false,
+            'has_consent' => false,
+            'pixel_id' => '',
+            'message' => 'Tracking disabilitato per utenti loggati'
+        );
+        wp_send_json( $response );
     }
     
     // Controlla se il consenso marketing è attivo
@@ -230,9 +242,50 @@ function ati_ajax_reload_facebook_pixel() {
 add_action( 'wp_ajax_ati_reload_facebook_pixel', 'ati_ajax_reload_facebook_pixel' );
 add_action( 'wp_ajax_nopriv_ati_reload_facebook_pixel', 'ati_ajax_reload_facebook_pixel' );
 
+/**
+ * AJAX handler per caricare dinamicamente i tag di tracking
+ */
+function ati_ajax_load_tracking_tags() {
+    // Verifica nonce per sicurezza
+    if ( ! wp_verify_nonce( $_POST['nonce'] ?? '', 'ati_load_tags' ) ) {
+        wp_die( 'Nonce verification failed' );
+    }
+    
+    // NUOVO: Blocca completamente se utenti loggati sono disabilitati
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        $response = array(
+            'success' => false,
+            'tags_html' => '',
+            'message' => 'Tracking disabilitato per utenti loggati'
+        );
+        wp_send_json( $response );
+    }
+    
+    // Cattura l'output di ati_output_tags
+    ob_start();
+    ati_output_tags();
+    $tags_output = ob_get_clean();
+    
+    $response = array(
+        'success' => true,
+        'tags_html' => $tags_output,
+        'message' => 'Tags loaded successfully'
+    );
+    
+    wp_send_json( $response );
+}
+add_action( 'wp_ajax_ati_load_tracking_tags', 'ati_ajax_load_tracking_tags' );
+add_action( 'wp_ajax_nopriv_ati_load_tracking_tags', 'ati_ajax_load_tracking_tags' );
+
 
 add_action( 'wp_footer', 'fst_inline_tracking_js', 100 );
-function fst_inline_tracking_js() { ?>
+function fst_inline_tracking_js() { 
+    // Controllo server-side: se utenti loggati sono disabilitati, non caricare nemmeno JavaScript
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        echo '<!-- Tracking disabilitato per utenti loggati -->';
+        return;
+    }
+    ?>
 <script>
 // ========================================
 // VARIABILI GLOBALI E SETUP
@@ -244,6 +297,73 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   const endpoint = '<?php echo esc_js( home_url( '/wp-json/fst/v1/event' ) ); ?>';
   const ajaxUrl = window.fstAjaxUrl;
   window.consentCookieName = '<?php echo esc_js( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?>';
+  
+  // ========================================
+  // CARICAMENTO DINAMICO TAG DI TRACKING
+  // ========================================
+  
+  // Carica dinamicamente i tag di tracking (GA4, GTM, Facebook Pixel se consenso)
+  function loadTrackingTags() {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST] 🔄 Caricamento dinamico tag di tracking...');
+<?php endif; ?>
+    
+    fetch(ajaxUrl, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams({
+        action: 'ati_load_tracking_tags',
+        nonce: '<?php echo wp_create_nonce( "ati_load_tags" ); ?>'
+      })
+    }).then(response => response.json())
+      .then(data => {
+        if (data.success && data.tags_html) {
+          // Inserisce i tag nell'head
+          const tempDiv = document.createElement('div');
+          tempDiv.innerHTML = data.tags_html;
+          
+          // Sposta tutti gli script e link nell'head
+          const scripts = tempDiv.querySelectorAll('script');
+          const links = tempDiv.querySelectorAll('link');
+          
+          scripts.forEach(script => {
+            const newScript = document.createElement('script');
+            if (script.src) {
+              newScript.src = script.src;
+              newScript.async = script.async;
+            } else {
+              newScript.textContent = script.textContent;
+            }
+            document.head.appendChild(newScript);
+          });
+          
+          links.forEach(link => {
+            document.head.appendChild(link.cloneNode(true));
+          });
+          
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+          console.log('[FST] ✅ Tag di tracking caricati dinamicamente');
+<?php endif; ?>
+        } else {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+          console.log('[FST] ⚠️ Nessun tag da caricare:', data.message);
+<?php endif; ?>
+        }
+      })
+      .catch(err => {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+        console.error('[FST] ❌ Errore caricamento tag:', err);
+<?php endif; ?>
+      });
+  }
+  
+  // Carica i tag immediatamente al DOMContentLoaded
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', loadTrackingTags);
+  } else {
+    loadTrackingTags();
+  }
   
   // ========================================
   // CONTROLLO CONSENSO COOKIE GDPR
@@ -262,7 +382,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php endif; ?>
 
   window.marketingConsent = document.cookie.match(new RegExp('(?:^|; )' + window.consentCookieName + '=([^;]+)'))?.[1] === 'allow';
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
   console.log('[FST] Consenso marketing:', window.marketingConsent ? '✅ Consentito' : '❌ Non consentito');
+<?php endif; ?>
   
   // ========================================
   // FUNZIONI HELPER EVENT ID E EXTERNAL ID
@@ -351,12 +473,18 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       // Invia a Facebook Pixel con eventID per deduplica server/client
       fbq('track', fbEventName, fbParams, {eventID: payload.eventID});
       
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST] 📘 Facebook Pixel event:', fbEventName, 'ID:', payload.eventID, 'External ID:', externalId);
+<?php endif; ?>
     } else if (!window.fbq) {
       // Se fbq non è definito, significa che il Pixel non è stato caricato
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.warn('[FST] ⚠️ Facebook Pixel non caricato - consenso mancante o script non inizializzato');
+<?php endif; ?>
     } else {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.warn('[FST] ⚠️ Facebook Pixel non inviato - nessun consenso marketing o evento non tracciato');
+<?php endif; ?>
     }
     
     return payload.eventID;
@@ -368,10 +496,12 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   const pageViewID = getEventId();
   
   // Invia PageView al server via AJAX (sempre, anche senza consenso)
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
   console.log('[FST] 🖥️ Invio PageView al server:', ajaxUrl);
   console.log('[FST] 🖥️ Event ID:', pageViewID);
   console.log('[FST] 🖥️ Page URL:', window.location.href);
   console.log('[FST] 🖥️ Page Title:', document.title);
+<?php endif; ?>
   
   fetch(ajaxUrl, {
     method: 'POST',
@@ -384,27 +514,37 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       page_title: document.title
     })
   }).then(response => {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] 🖥️ Server response status:', response.status);
+<?php endif; ?>
     return response.text();
   })
     .then(msg => {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST] 🖥️ Server PageView response:', msg);
+<?php endif; ?>
     })
     .catch(err => {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.error('[FST] ⚠️ Errore server PageView:', err);
+<?php endif; ?>
     });
 
   // Invia PageView a Facebook Pixel se il consenso è dato
   if (window.marketingConsent && window.fbq) {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] 📘 Invia PageView a Facebook Pixel');
+<?php endif; ?>
     fbq('track', 'PageView', {}, {eventID: pageViewID});
   } else if (!window.fbq && window.marketingConsent) {
-    // Se fbq non è definito, significa che il Pixel non è stato caricato, ritentiamo fino a 3 tentativi ogni 500ms
+    // Se fbq non è definito, significa che il Pixel non è stato caricato, ritentiamo fino a 5 tentativi ogni 500ms
     let attempts = 0;
-    const maxAttempts = 3;
+    const maxAttempts = 5;
     const interval = setInterval(() => {
       if (window.fbq) {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
         console.log('[FST] 📘 Facebook Pixel caricato, invio PageView');
+<?php endif; ?>
         fbq('track', 'PageView', {}, {eventID: pageViewID});
         // log dettagli se WP_DEBUG è true
         <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
@@ -415,12 +555,16 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
         
         clearInterval(interval);
       } else if (++attempts === maxAttempts) {
-        console.warn('[FST] ⚠️ Facebook Pixel non caricato dopo 3 tentativi');
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+        console.warn('[FST] ⚠️ Facebook Pixel non caricato dopo 5 tentativi');
+<?php endif; ?>
         clearInterval(interval);
       }
     }, 500);
   } else {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.warn('[FST] ⚠️ Facebook Pixel PageView non inviato - nessun consenso marketing');
+<?php endif; ?>
   }
   
   clearEventId();
@@ -440,7 +584,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     
     // Esclude bottoni di submit dei form (già tracciati come Lead)
     if (btn.type === 'submit' || btn.getAttribute('type') === 'submit') {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST] ButtonClick saltato - bottone submit (sarà tracciato come Lead):', btn);
+<?php endif; ?>
       return;
     }
     
@@ -451,11 +597,15 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
         btn.classList.contains('form-submit') ||
         btn.querySelector('.button-atom__text')?.textContent.includes('Richiedi')
     )) {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST] ButtonClick saltato - bottone submit form (sarà tracciato come Lead):', btn);
+<?php endif; ?>
       return;
     }
     
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] ButtonClick', btn);
+<?php endif; ?>
     sendEvent({
       type: 'ButtonClick',
       label: btn.id || btn.textContent.trim().slice(0,80),
@@ -469,7 +619,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     const form = e.target.closest('form');
     if (!form || form.fstStarted) return;
     form.fstStarted = true;
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] FormStart', form);
+<?php endif; ?>
     sendEvent({
       type: 'FormStart',
       label: form.id || form.action || 'generic',
@@ -481,7 +633,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   /* FORM SUBMIT */
   document.addEventListener('submit', e => {
     const form = e.target;
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] FormSubmit', form);
+<?php endif; ?>
     sendEvent({
       type: 'Lead',
       label: form.id || form.action || 'generic',
@@ -509,11 +663,15 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 
   function loadFacebookPixelDynamically(){
     if(window.fbq){
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST] ✅ Facebook Pixel già caricato');
+<?php endif; ?>
       return;
     }
 
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] 🔄 Verifica consenso via AJAX...');
+<?php endif; ?>
     fetch(window.fstAjaxUrl, {
       method:'POST',
       credentials:'same-origin',
@@ -524,7 +682,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       })
     }).then(r=>r.json()).then(data=>{
       if(data.success && data.pixel_id){
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
         console.log('[FST] 🔄 Caricamento dinamico Facebook Pixel ID:', data.pixel_id);
+<?php endif; ?>
         window.atiFbPixelId = data.pixel_id;
         window.atiFbPixelDebug = <?php echo defined( 'WP_DEBUG' ) && WP_DEBUG ? 'true' : 'false'; ?>;
         const s = document.createElement('script');
@@ -533,20 +693,30 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
         s.onload = function(){
         };
         document.head.appendChild(s);
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
         console.log('[FST] ✅ Facebook Pixel caricato dinamicamente');
+<?php endif; ?>
       }else{
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
         console.log('[FST] ⚠️ Facebook Pixel non caricato:', data.message);
+<?php endif; ?>
       }
     }).catch(err=>{
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.error('[FST] ❌ Errore caricamento Facebook Pixel:', err);
+<?php endif; ?>
     });
   }
 
   function removeFacebookPixel(){
     if(window.fbq){
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST] 🔄 Rimozione Facebook Pixel...');
+<?php endif; ?>
       window.fbq = function(){
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
         console.log('[FST] ⚠️ Facebook Pixel disabilitato - consenso revocato');
+<?php endif; ?>
       };
     }
   }
@@ -556,7 +726,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     setInterval(()=>{
       const newConsent = hasMarketingConsent();
       if(newConsent !== currentConsent){
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
         console.log('[FST] 🔄 Cambio consenso rilevato:', currentConsent, '->', newConsent);
+<?php endif; ?>
         currentConsent = newConsent;
         window.marketingConsent = newConsent;
         if(newConsent){

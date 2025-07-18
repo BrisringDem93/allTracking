@@ -3,7 +3,9 @@
   const debug = !!window.atiFbPixelDebug;
 
   if (!pixelId) {
-    console.warn('[FST] Facebook Pixel ID non configurato');
+    if (debug) {
+      console.warn('[FST] Facebook Pixel ID non configurato');
+    }
     return;
   }
 
@@ -28,15 +30,20 @@
 
   fbq('init', pixelId, { autoConfig: false, debug: debug });
   fbq('set', 'autoConfig', false, pixelId);
-  console.log('[FST] 📘 Facebook Pixel inizializzato (consenso OK) - ID:', pixelId);
-  console.log('[FST] 📘 Tracciamento automatico DISABILITATO - solo eventi manuali con eventID');
+  
+  if (debug) {
+    console.log('[FST] 📘 Facebook Pixel inizializzato (consenso OK) - ID:', pixelId);
+    console.log('[FST] 📘 Tracciamento automatico DISABILITATO - solo eventi manuali con eventID');
+  }
 
   // // Blocca gli eventi privi di eventID per evitare duplicazioni
   // const realFbq = window.fbq;
   // function guardedFbq() {
   //   const cmd = arguments[0];
   //   if ((cmd === 'track' || cmd === 'trackCustom') && (!arguments[3] || !arguments[3].eventID)) {
-  //     console.warn('[FST] Evento bloccato - eventID mancante per', arguments[1]);
+  //     if (debug) {
+  //       console.warn('[FST] Evento bloccato - eventID mancante per', arguments[1]);
+  //     }
   //     return;
   //   }
   //   return realFbq.apply(this, arguments);
