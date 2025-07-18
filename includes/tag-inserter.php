@@ -447,13 +447,13 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   
   // Ottiene fbclid dalla migliore fonte disponibile
   function getFbclid() {
-    // Prima prova dall'URL (più recente)
-    const urlFbclid = getFbclidFromUrl();
-    if (urlFbclid) return urlFbclid;
-    
-    // Poi prova dal cookie (precedente)
+    // Prima prova dal cookie (precedente)
     const cookieFbclid = getFbclidFromCookie();
     if (cookieFbclid) return cookieFbclid;
+
+    // Poi prova dall'URL (più recente)
+    const urlFbclid = getFbclidFromUrl();
+    if (urlFbclid) return urlFbclid;
     
     return null;
   }
@@ -539,6 +539,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // PAGEVIEW TRACKING
   // ========================================
   const pageViewID = getEventId();
+  window.fstLastPageViewId = pageViewID; // Salva l'ID per uso futuro
+  window.fstFbPageViewSent = false; // Flag per evitare invii multipli
+  
   
   // Prepara dati per PageView
   const pageViewData = {
@@ -588,14 +591,15 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php endif; ?>
     });
 
-  // Invia PageView a Facebook Pixel se il consenso è dato
-  if (window.marketingConsent && window.fbq) {
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    console.log('[FST] 📘 Invia PageView a Facebook Pixel');
-<?php endif; ?>
+  // Invia PageView a Facebook Pixel se il consenso è dato e lo script è già caricato
+  if (window.marketingConsent && window.fbq && !window.fstFbPageViewSent) {
+    <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST] 📘 Invia PageView a Facebook Pixel (script già presente)');
+    <?php endif; ?>
     fbq('track', 'PageView', {}, {eventID: pageViewID});
+    window.fstFbPageViewSent = true; // Segna come inviato
   } else if (!window.fbq && window.marketingConsent) {
-    // Se fbq non è definito, significa che il Pixel non è stato caricato, ritentiamo fino a 5 tentativi ogni 500ms
+   // Se fbq non è definito, significa che il Pixel non è stato caricato, ritentiamo fino a 5 tentativi ogni 500ms
     let attempts = 0;
     const maxAttempts = 5;
     const interval = setInterval(() => {
@@ -749,6 +753,17 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
         s.defer = true;
         s.src = fbPixelScriptUrl;
         s.onload = function(){
+          // Una volta caricato lo script, invia l'evento PageView se non è già stato fatto
+          if (window.fbq && !window.fstFbPageViewSent) {
+            const pageViewID = window.fstLastPageViewId;
+            if (pageViewID) {
+              <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+              console.log('[FST] 📘 Invia PageView a Facebook Pixel (caricamento dinamico)', { eventID: pageViewID });
+              <?php endif; ?>
+              window.fbq('track', 'PageView', {}, { eventID: pageViewID });
+              window.fstFbPageViewSent = true; // Segna come inviato
+            }
+          }
         };
         document.head.appendChild(s);
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
