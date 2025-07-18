@@ -444,9 +444,31 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     }
     return null;
   }
+
+  // Funzione per richiesta AJAX per ottenere fbclid
+  async function fetchFbclid() {
+    try {
+      const response = await fetch(ajaxUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          action: 'fst_get_fbclid',
+          nonce: '<?php echo wp_create_nonce( "fst_get_fbclid_nonce" ); ?>'
+        })
+      });
+      const data = await response.json();
+      if (data.success && data.data.fbclid) {
+        return data.data.fbclid;
+      }
+      return null;
+    } catch (error) {
+      console.error('Errore nel recupero di fbclid:', error);
+      return null;
+    }
+  }
   
   // Ottiene fbclid dalla migliore fonte disponibile
-  function getFbclid() {
+  async function getFbclid() {
     // Prima prova dal cookie (precedente)
     const cookieFbclid = getFbclidFromCookie();
     if (cookieFbclid) return cookieFbclid;
@@ -454,6 +476,10 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     // Poi prova dall'URL (più recente)
     const urlFbclid = getFbclidFromUrl();
     if (urlFbclid) return urlFbclid;
+
+    // Infine, prova a recuperarlo via AJAX dal server
+    const ajaxFbclid = await fetchFbclid();
+    if (ajaxFbclid) return ajaxFbclid;
     
     return null;
   }
@@ -461,11 +487,11 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // ========================================
   // INVIO EVENTI (SERVER + FACEBOOK SE CONSENTITO)
   // ========================================
-  function sendEvent(payload) {
+  async function sendEvent(payload) {
     payload.eventID = getEventId();
     
     // Aggiunge fbclid se disponibile
-    const fbclid = getFbclid();
+    const fbclid = await getFbclid();
     if (fbclid) {
       payload.fbclid = fbclid;
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
@@ -538,98 +564,80 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // ========================================
   // PAGEVIEW TRACKING
   // ========================================
-  const pageViewID = getEventId();
-  window.fstLastPageViewId = pageViewID; // Salva l'ID per uso futuro
-  window.fstFbPageViewSent = false; // Flag per evitare invii multipli
+  (async function() {
+    const pageViewID = getEventId();
+    window.fstLastPageViewId = pageViewID; // Salva l'ID per uso futuro
+    window.fstFbPageViewSent = false; // Flag per evitare invii multipli
+    
+    // Prepara dati per PageView
+    const pageViewData = {
+      action: 'fst_pageview',
+      event_id: pageViewID,
+      page_url: window.location.href,
+      page_title: document.title
+    };
+    
+    // Aggiunge fbclid se disponibile
+    const fbclid = await getFbclid();
+    if (fbclid) {
+      pageViewData.fbclid = fbclid;
+  <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.log('[FST] 🖥️ PageView con FBCLID:', fbclid);
+  <?php endif; ?>
+    }
+    
+    // Invia PageView al server via AJAX (sempre, anche senza consenso)
+  <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST] 🖥️ Invio PageView al server:', ajaxUrl);
+    console.log('[FST] 🖥️ Event ID:', pageViewID);
+    console.log('[FST] 🖥️ Page URL:', window.location.href);
+    console.log('[FST] 🖥️ Page Title:', document.title);
+    console.log('[FST] 🖥️ Data payload:', pageViewData);
+  <?php endif; ?>
   
-  
-  // Prepara dati per PageView
-  const pageViewData = {
-    action: 'fst_pageview',
-    event_id: pageViewID,
-    page_url: window.location.href,
-    page_title: document.title
-  };
-  
-  // Aggiunge fbclid se disponibile
-  const fbclid = getFbclid();
-  if (fbclid) {
-    pageViewData.fbclid = fbclid;
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    console.log('[FST] 🖥️ PageView con FBCLID:', fbclid);
-<?php endif; ?>
-  }
-  
-  // Invia PageView al server via AJAX (sempre, anche senza consenso)
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-  console.log('[FST] 🖥️ Invio PageView al server:', ajaxUrl);
-  console.log('[FST] 🖥️ Event ID:', pageViewID);
-  console.log('[FST] 🖥️ Page URL:', window.location.href);
-  console.log('[FST] 🖥️ Page Title:', document.title);
-  console.log('[FST] 🖥️ Data payload:', pageViewData);
-<?php endif; ?>
-  
-  fetch(ajaxUrl, {
-    method: 'POST',
-    credentials: 'same-origin',
-    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-    body: new URLSearchParams(pageViewData)
-  }).then(response => {
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    console.log('[FST] 🖥️ Server response status:', response.status);
-<?php endif; ?>
-    return response.text();
-  })
-    .then(msg => {
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-      console.log('[FST] 🖥️ Server PageView response:', msg);
-<?php endif; ?>
+    fetch(ajaxUrl, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+      body: new URLSearchParams(pageViewData)
+    }).then(response => {
+  <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.log('[FST] 🖥️ Server response status:', response.status);
+  <?php endif; ?>
+      return response.text();
     })
-    .catch(err => {
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-      console.error('[FST] ⚠️ Errore server PageView:', err);
-<?php endif; ?>
-    });
-
-  // Invia PageView a Facebook Pixel se il consenso è dato e lo script è già caricato
-  if (window.marketingConsent && window.fbq && !window.fstFbPageViewSent) {
-    <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    console.log('[FST] 📘 Invia PageView a Facebook Pixel (script già presente)');
-    <?php endif; ?>
-    fbq('track', 'PageView', {}, {eventID: pageViewID});
-    window.fstFbPageViewSent = true; // Segna come inviato
-  } else if (!window.fbq && window.marketingConsent) {
-   // Se fbq non è definito, significa che il Pixel non è stato caricato, ritentiamo fino a 5 tentativi ogni 500ms
-    let attempts = 0;
-    const maxAttempts = 5;
-    const interval = setInterval(() => {
-      if (window.fbq) {
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-        console.log('[FST] 📘 Facebook Pixel caricato, invio PageView');
-<?php endif; ?>
-        fbq('track', 'PageView', {}, {eventID: pageViewID});
-        // log dettagli se WP_DEBUG è true
-        <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-        console.log('🎯 Page View Event ID:', pageViewID);
-        console.log('🌐 URL:', window.location.href);
-        console.log('📄 Page Title:', document.title);
-        <?php endif; ?>
-        
-        clearInterval(interval);
-      } else if (++attempts === maxAttempts) {
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-        console.warn('[FST] ⚠️ Facebook Pixel non caricato dopo 5 tentativi');
-<?php endif; ?>
-        clearInterval(interval);
-      }
-    }, 1000);
-  } else {
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    console.warn('[FST] ⚠️ Facebook Pixel PageView non inviato - nessun consenso marketing');
-<?php endif; ?>
-  }
+      .then(msg => {
+  <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+        console.log('[FST] 🖥️ Server PageView response:', msg);
+  <?php endif; ?>
+      })
+      .catch(err => {
+  <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+        console.error('[FST] ⚠️ Errore server PageView:', err);
+  <?php endif; ?>
+      });
   
-  clearEventId();
+    // Invia PageView a Facebook Pixel se il consenso è dato e lo script è già caricato
+    if (window.marketingConsent && window.fbq && !window.fstFbPageViewSent) {
+      <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.log('[FST] 📘 Invia PageView a Facebook Pixel (script già presente)');
+      <?php endif; ?>
+      fbq('track', 'PageView', {}, {eventID: pageViewID});
+      window.fstFbPageViewSent = true; // Segna come inviato
+    } else if (!window.fbq && window.marketingConsent) {
+     // Se fbq non è definito, l'evento PageView verrà inviato dall'handler onload 
+    // di loadFacebookPixelDynamically o dal listener 'cmplz_marketing_accept'.
+    <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+        console.log('[FST] ⚠️ fbq non ancora disponibile. PageView sarà inviato al caricamento dello script.');
+    <?php endif; ?>
+    } else {
+  <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.warn('[FST] ⚠️ Facebook Pixel PageView non inviato - nessun consenso o già inviato');
+  <?php endif; ?>
+    }
+    
+    clearEventId();
+  })();
 
   // ========================================
   // EVENT LISTENERS PER INTERAZIONI

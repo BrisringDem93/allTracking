@@ -391,11 +391,8 @@ function fst_build_user_data( $fbclid = '' ) {
             error_log( '[FST] 🍪 Cookie _fbc impostato: ' . $fbc_value );
         }
 
-    } else {
-        $user_data['fbc'] = null;
-        if ( WP_DEBUG ) {
-            error_log( '[FST] 📘 Nessun _fbc o FBCLID disponibile' );
-        }
+        // set cookie _fbc in db
+        fst_save_user_cookie( fst_get_uid(), $fbc_value, 90 ); // Salva per 90 giorni
     }
     
     // DEBUG: Log finale dei dati user_data costruiti

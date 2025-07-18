@@ -68,3 +68,32 @@ function fst_get_user_cookie($fst_uid) {
     );
     return $cookie;
 }
+
+/**
+ * AJAX handler per recuperare fbclid dal cookie _fbc
+ */
+function fst_get_fbclid_ajax_handler() {
+    if ( ! isset( $_POST['nonce'] ) || ! wp_verify_nonce( $_POST['nonce'], 'fst_get_fbclid_nonce' ) ) {
+        wp_send_json_error( 'Invalid nonce' );
+        return;
+    }
+    
+    $fbclid = null;
+    
+    if ( isset( $_COOKIE['_fbc'] ) ) {
+        // Il cookie _fbc ha formato: fb.1.timestamp.fbclid
+        $parts = explode( '.', $_COOKIE['_fbc'] );
+        if ( count( $parts ) >= 4 ) {
+            // Prende tutto dopo il timestamp
+            $fbclid = implode( '.', array_slice( $parts, 3 ) );
+        }
+    }
+
+    if ( $fbclid ) {
+        wp_send_json_success( array( 'fbclid' => $fbclid ) );
+    } else {
+        wp_send_json_error( array( 'message' => 'fbclid not found' ) );
+    }
+}
+add_action( 'wp_ajax_fst_get_fbclid', 'fst_get_fbclid_ajax_handler' );
+add_action( 'wp_ajax_nopriv_fst_get_fbclid', 'fst_get_fbclid_ajax_handler' );
