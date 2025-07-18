@@ -118,6 +118,7 @@ function fst_ajax_pageview_handler() {
     $event_id = sanitize_text_field( $_POST['event_id'] ?? '' );     // ID univoco generato dal client
     $page_url = esc_url_raw( $_POST['page_url'] ?? '' );            // URL della pagina (es: https://sito.com/pagina)
     $page_title = sanitize_text_field( $_POST['page_title'] ?? '' ); // Titolo della pagina (es: "Homepage - Il mio sito")
+    $fbclid = sanitize_text_field( $_POST['fbclid'] ?? '' );         // Facebook Click ID se presente
     
     // STEP 3: Verifica che l'event_id sia presente (obbligatorio per evitare duplicazioni)
     if ( ! $event_id ) {
@@ -134,12 +135,26 @@ function fst_ajax_pageview_handler() {
         'event_source_url' => $page_url,                 // URL sorgente evento
         'action_source'    => 'website',                 // Tipo sorgente (sempre "website")
         'event_id'         => $event_id,                 // ID per deduplica client/server
-        'user_data'        => fst_build_user_data(),     // Dati utente (IP, cookies, etc.)
+        'user_data'        => fst_build_user_data( $fbclid ),     // Dati utente (IP, cookies, etc.)
         'custom_data'      => [
             'page_title' => $page_title,                 // Titolo pagina personalizzato
             'triggered_by' => 'javascript'               // Indicatore che proviene da JS
         ]
     ];
+    
+    // DEBUG: Log dell'evento completo prima dell'invio
+    if ( WP_DEBUG ) {
+        error_log( '[FST] 📤 Evento PageView completo da inviare:' );
+        error_log( '[FST] ' . print_r( $event, true ) );
+    }
+    
+    // NUOVO: Aggiunge fbclid ai custom_data se presente
+    if ( ! empty( $fbclid ) ) {
+        $event['custom_data']['fbclid'] = $fbclid;
+        if ( WP_DEBUG ) {
+            error_log( '[FST] 📘 PageView con FBCLID: ' . $fbclid );
+        }
+    }
 
     // STEP 4: Log di debug (se WP_DEBUG è attivo)
     if ( WP_DEBUG ) {
@@ -216,6 +231,7 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
     $type    = sanitize_text_field( $req->get_param( 'type' ) );  // Tipo evento (ButtonClick, FormStart, etc.)
     $label   = sanitize_text_field( $req->get_param( 'label' ) ); // Etichetta descrittiva (es: "Download PDF")
     $page    = esc_url_raw( $req->get_param( 'page' ) );          // URL pagina sorgente
+    $fbclid  = sanitize_text_field( $req->get_param( 'fbclid' ) ?? '' ); // Facebook Click ID se presente
     
     // STEP 2: Verifica presenza obbligatoria dell'event_id (per deduplica)
     // A differenza del vecchio sistema, NON generiamo più event_id lato server
@@ -236,8 +252,16 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
         'action_source'    => 'website',               // Sempre "website"
         'event_id'         => $event_id,               // ID per deduplica client/server
         'custom_data'      => [ 'label' => $label ],   // Dati personalizzati
-        'user_data'        => fst_build_user_data(),   // Dati utente (IP, cookie, etc.)
+        'user_data'        => fst_build_user_data( $fbclid ),   // Dati utente (IP, cookie, etc.)
     ];
+    
+    // NUOVO: Aggiunge fbclid ai custom_data se presente
+    if ( ! empty( $fbclid ) ) {
+        $event['custom_data']['fbclid'] = $fbclid;
+        if ( WP_DEBUG ) {
+            error_log( '[FST] 📘 ' . $type . ' con FBCLID: ' . $fbclid );
+        }
+    }
 
     // STEP 4: Gestione speciale per FormSubmit - hasha dati sensibili
     // Email e telefono vengono hashati per privacy ma rimangono tracciabili
@@ -256,6 +280,8 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
     // STEP 5: Log di debug per monitoraggio
     if ( WP_DEBUG ) {
         error_log( '[FST] 🎯 ' . $type . ' da JavaScript: ID ' . $event_id );
+        error_log( '[FST] 📤 Evento ' . $type . ' completo da inviare:' );
+        error_log( '[FST] ' . print_r( $event, true ) );
     }
 
     // STEP 6: Invia a n8n (webhook personalizzato)
@@ -282,25 +308,41 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
  * 
  * - external_id: Pseudonimo persistente generato internamente
  * - fbp: Cookie Facebook Pixel (_fbp) se presente
- * - fbc: Cookie Facebook Click (_fbc) se presente  
+ * - fbc: Cookie Facebook Click (_fbc) se presente, o costruito da fbclid
  * - client_user_agent: User Agent del browser
  * - client_ip_address: Indirizzo IP del visitatore
  * 
  * Tutti i dati sono anonimi o pseudonimi per rispettare la privacy.
  * 
+ * @param string $fbclid Facebook Click ID dal frontend (opzionale)
  * @return array Dati utente formattati per Facebook API
  * @since 1.1
  */
-function fst_build_user_data() {
-    return [
+function fst_build_user_data( $fbclid = '' ) {
+    // DEBUG: Log di tutti i cookie disponibili
+    if ( WP_DEBUG ) {
+        error_log( '[FST] 🍪 Cookie disponibili: ' . print_r( $_COOKIE, true ) );
+    }
+    
+    // Gestione cookie _fbp con log dettagliato
+    $fbp_value = null;
+    if ( isset( $_COOKIE['_fbp'] ) ) {
+        $fbp_value = sanitize_text_field( $_COOKIE['_fbp'] );
+        if ( WP_DEBUG ) {
+            error_log( '[FST] 📘 Cookie _fbp trovato: ' . $fbp_value );
+        }
+    } else {
+        if ( WP_DEBUG ) {
+            error_log( '[FST] ⚠️ Cookie _fbp NON trovato nei cookie HTTP' );
+        }
+    }
+    
+    $user_data = [
         // Pseudonimo utente persistente (generato internamente, non invasivo)
         'external_id'       => fst_get_uid(),
         
         // Cookie Facebook Pixel (se l'utente ha visitato una pagina con FB Pixel)
-        'fbp'               => isset( $_COOKIE['_fbp'] ) ? sanitize_text_field( $_COOKIE['_fbp'] ) : null,
-        
-        // Cookie Facebook Click (se l'utente è arrivato tramite annuncio Facebook)
-        'fbc'               => isset( $_COOKIE['_fbc'] ) ? sanitize_text_field( $_COOKIE['_fbc'] ) : null,
+        'fbp'               => $fbp_value,
         
         // User Agent del browser (per device matching)
         'client_user_agent' => $_SERVER['HTTP_USER_AGENT'] ?? '',
@@ -308,6 +350,65 @@ function fst_build_user_data() {
         // Indirizzo IP del visitatore (per geo matching)
         'client_ip_address' => $_SERVER['REMOTE_ADDR'] ?? '',
     ];
+    
+    // GESTIONE INTELLIGENTE DEL COOKIE _fbc
+    // Prima prova a usare il cookie _fbc esistente
+    if ( isset( $_COOKIE['_fbc'] ) ) {
+        $user_data['fbc'] = sanitize_text_field( $_COOKIE['_fbc'] );
+        if ( WP_DEBUG ) {
+            error_log( '[FST] 📘 _fbc cookie esistente: ' . $user_data['fbc'] );
+        }
+    } elseif ( ! empty( $fbclid ) ) {
+        // Se non c'è cookie _fbc ma abbiamo fbclid, costruisce il valore manualmente
+        // Formato _fbc: fb.{subdomain-index}.{timestamp}.{fbclid}
+        // Determine the subdomain index (0 for 'com', 1 for 'example.com', 2 for 'www.example.com')
+        $subdomain_index = 1; // Default: assume cookie is set on example.com
+
+        // Attempt to determine the correct subdomain index based on the referring URL
+        $referrer = $_SERVER['HTTP_REFERER'] ?? '';
+        if ( ! empty( $referrer ) ) {
+            $referrer_parts = parse_url( $referrer );
+            if ( ! empty( $referrer_parts['host'] ) ) {
+            // Check for fb*.example.com or m.example.com patterns in the referrer host
+            if ( preg_match( '/^fb(\d+)\./', $referrer_parts['host'], $matches ) ) {
+                $subdomain_index = (int) $matches[1];
+            } elseif ( strpos( $referrer_parts['host'], 'm.' ) === 0 ) {
+                $subdomain_index = 0; // Consider 'm' as the base domain
+            }
+            }
+        }
+        $timestamp = time();
+        $fbc_value = "fb.{$subdomain_index}.{$timestamp}.{$fbclid}";
+        $user_data['fbc'] = $fbc_value;
+        
+        if ( WP_DEBUG ) {
+            error_log( '[FST] 📘 _fbc costruito da FBCLID: ' . $fbc_value );
+        }
+        
+        // OPZIONALE: Imposta anche il cookie nel browser per le prossime richieste
+        setcookie( '_fbc', $fbc_value, time() + 7776000, '/', '', false, false ); // 90 giorni
+        if ( WP_DEBUG ) {
+            error_log( '[FST] 🍪 Cookie _fbc impostato: ' . $fbc_value );
+        }
+
+    } else {
+        $user_data['fbc'] = null;
+        if ( WP_DEBUG ) {
+            error_log( '[FST] 📘 Nessun _fbc o FBCLID disponibile' );
+        }
+    }
+    
+    // DEBUG: Log finale dei dati user_data costruiti
+    if ( WP_DEBUG ) {
+        error_log( '[FST] 📊 User data costruiti:' );
+        error_log( '[FST]   - external_id: ' . $user_data['external_id'] );
+        error_log( '[FST]   - fbp: ' . ( $user_data['fbp'] ? $user_data['fbp'] : 'NULL' ) );
+        error_log( '[FST]   - fbc: ' . ( $user_data['fbc'] ? $user_data['fbc'] : 'NULL' ) );
+        error_log( '[FST]   - IP: ' . $user_data['client_ip_address'] );
+        error_log( '[FST]   - User Agent: ' . substr( $user_data['client_user_agent'], 0, 50 ) . '...' );
+    }
+    
+    return $user_data;
 }
 
 /**

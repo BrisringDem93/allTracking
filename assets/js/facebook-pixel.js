@@ -30,8 +30,7 @@
 
   fbq('init', pixelId, { autoConfig: false, debug: debug });
   fbq('set', 'autoConfig', false, pixelId);
-  
-  if (debug) {
+   if (debug) {
     console.log('[FST] 📘 Facebook Pixel inizializzato (consenso OK) - ID:', pixelId);
     console.log('[FST] 📘 Tracciamento automatico DISABILITATO - solo eventi manuali con eventID');
   }
