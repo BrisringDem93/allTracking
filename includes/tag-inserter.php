@@ -261,15 +261,67 @@ function ati_ajax_load_tracking_tags() {
         wp_send_json( $response );
     }
     
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] === INIZIO ati_ajax_load_tracking_tags() ===' );
+    }
+
+    $has_marketing_consent = ati_has_marketing_consent();
+    $fb_enabled  = get_option( 'ati_enable_fb', false );
+    $fb_pixel_id = trim( get_option( 'ati_fb_pixel_id', '' ) );
+    $ga_enabled  = get_option( 'ati_enable_ga4', false );
+    $ga_id       = trim( get_option( 'ati_ga4_id', '' ) );
+    $gtm_enabled = get_option( 'ati_enable_gtm', false );
+    $gtm_id      = trim( get_option( 'ati_gtm_id', '' ) );
+
+    $should_render = ( $ga_enabled && ! empty( $ga_id ) )
+        || ( $gtm_enabled && ! empty( $gtm_id ) )
+        || ( $fb_enabled && ! empty( $fb_pixel_id ) && $has_marketing_consent );
+
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] Consenso marketing: ' . ( $has_marketing_consent ? 'SI' : 'NO' ) );
+        error_log( '[ATI DEBUG] FB abilitato: ' . ( $fb_enabled ? 'SI' : 'NO' ) . ' | Pixel ID: ' . ( $fb_pixel_id ? 'OK' : 'VUOTO' ) );
+        error_log( '[ATI DEBUG] GA4 abilitato: ' . ( $ga_enabled ? 'SI' : 'NO' ) . ' | GA ID: ' . ( $ga_id ? 'OK' : 'VUOTO' ) );
+        error_log( '[ATI DEBUG] GTM abilitato: ' . ( $gtm_enabled ? 'SI' : 'NO' ) . ' | GTM ID: ' . ( $gtm_id ? 'OK' : 'VUOTO' ) );
+    }
+
     // Cattura l'output di ati_output_tags
     ob_start();
     ati_output_tags();
     $tags_output = ob_get_clean();
+
+    $message = 'Tags loaded successfully';
+    if ( ! $should_render || empty( trim( $tags_output ) ) ) {
+        $reasons = array();
+        if ( ! $has_marketing_consent ) {
+            $reasons[] = 'consenso marketing non presente';
+        }
+        if ( $fb_enabled && empty( $fb_pixel_id ) ) {
+            $reasons[] = 'Pixel ID vuoto';
+        }
+        if ( $fb_enabled && ! $has_marketing_consent ) {
+            $reasons[] = 'Pixel bloccato dal consenso';
+        }
+        if ( $ga_enabled && empty( $ga_id ) ) {
+            $reasons[] = 'GA4 ID vuoto';
+        }
+        if ( $gtm_enabled && empty( $gtm_id ) ) {
+            $reasons[] = 'GTM ID vuoto';
+        }
+        if ( ! $fb_enabled && ! $ga_enabled && ! $gtm_enabled ) {
+            $reasons[] = 'nessun tag abilitato';
+        }
+        $message = $reasons
+            ? 'Nessun tag caricato: ' . implode( ', ', array_unique( $reasons ) )
+            : 'Nessun tag caricato';
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[ATI DEBUG] ' . $message );
+        }
+    }
     
     $response = array(
         'success' => true,
         'tags_html' => $tags_output,
-        'message' => 'Tags loaded successfully'
+        'message' => $message
     );
     
     wp_send_json( $response );
@@ -282,8 +334,14 @@ add_action( 'wp_footer', 'fst_inline_tracking_js', 100 );
 function fst_inline_tracking_js() { 
     // Controllo server-side: se utenti loggati sono disabilitati, non caricare nemmeno JavaScript
     if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[ATI DEBUG] Tracking JS non caricato - utente loggato e tracking disabilitato' );
+        }
         echo '<!-- Tracking disabilitato per utenti loggati -->';
         return;
+    }
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[ATI DEBUG] Tracking JS caricato nel footer' );
     }
     ?>
 <script>
