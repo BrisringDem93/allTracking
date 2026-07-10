@@ -44,9 +44,7 @@ function ati_has_marketing_consent() {
 /**
  * Output direct tracking tags when Google Tag Manager is disabled.
  *
- * Handles only direct GA4 and Facebook Pixel tags for the AJAX loader.
- * Controlla i consensi cookie prima di inserire gli script di tracking.
- * Se il cookie di consenso non vale "allow", inserisce solo il tracking server-side.
+ * Handles direct GA4 and consent-gated Facebook Pixel tags for the AJAX loader.
  */
 function ati_output_tags() {
     // DEBUG: Log inizio funzione
