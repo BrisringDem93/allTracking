@@ -42,7 +42,7 @@ function ati_has_marketing_consent() {
 }
 
 /**
- * Output tracking tags in the site head.
+ * Output direct tracking tags when Google Tag Manager is disabled.
  * 
  * Controlla i consensi cookie prima di inserire gli script di tracking.
  * Se il cookie di consenso non vale "allow", inserisce solo il tracking server-side.
@@ -70,8 +70,6 @@ function ati_output_tags() {
     }
 
     $gtm_enabled = get_option( 'ati_enable_gtm', false );
-    $gtm_id      = trim( get_option( 'ati_gtm_id', '' ) );
-
     // STEP 2: Controllo consenso marketing GDPR
     $has_marketing_consent = ati_has_marketing_consent();
     
@@ -160,38 +158,55 @@ function ati_output_tags() {
         <?php
     }
 
-    if ( $gtm_enabled && ! empty( $gtm_id ) ) {
-        ?>
-        <!-- Google Tag Manager -->
-        <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
-        new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
-        j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
-        'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
-        })(window,document,'script','dataLayer','<?php echo esc_js( $gtm_id ); ?>');</script>
-        <!-- End Google Tag Manager -->
-        <?php
-    }
-    
     // DEBUG: Log fine funzione
     if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
         error_log( '[ATI DEBUG] === FINE ati_output_tags() ===' );
     }
 }
-// HOOK RIMOSSO: ati_output_tags non viene più chiamato da wp_head per evitare problemi con le cache
-// add_action( 'wp_head', 'ati_output_tags' );
+/**
+ * Output the Google Tag Manager container in the document head.
+ */
+function ati_output_gtm_head() {
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        return;
+    }
+
+    $gtm_enabled = get_option( 'ati_enable_gtm', false );
+    $gtm_id      = trim( get_option( 'ati_gtm_id', '' ) );
+
+    if ( ! $gtm_enabled || empty( $gtm_id ) ) {
+        return;
+    }
+    ?>
+    <!-- Google Tag Manager -->
+    <script>(function(w,d,s,l,i){w[l]=w[l]||[];w[l].push({'gtm.start':
+    new Date().getTime(),event:'gtm.js'});var f=d.getElementsByTagName(s)[0],
+    j=d.createElement(s),dl=l!='dataLayer'?'&l='+l:'';j.async=true;j.src=
+    'https://www.googletagmanager.com/gtm.js?id='+i+dl;f.parentNode.insertBefore(j,f);
+    })(window,document,'script','dataLayer','<?php echo esc_js( $gtm_id ); ?>');</script>
+    <!-- End Google Tag Manager -->
+    <?php
+}
+add_action( 'wp_head', 'ati_output_gtm_head', 1 );
 
 /**
  * Output Google Tag Manager noscript after <body> tag.
  */
 function ati_output_gtm_noscript() {
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        return;
+    }
+
     $gtm_enabled = get_option( 'ati_enable_gtm', false );
     $gtm_id      = trim( get_option( 'ati_gtm_id', '' ) );
 
-    if ( $gtm_enabled && ! empty( $gtm_id ) ) {
-        echo "<!-- Google Tag Manager (noscript) -->\n";
-        echo '<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=' . esc_attr( $gtm_id ) . '" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>' . "\n";
-        echo "<!-- End Google Tag Manager (noscript) -->\n";
+    if ( ! $gtm_enabled || empty( $gtm_id ) ) {
+        return;
     }
+
+    echo "<!-- Google Tag Manager (noscript) -->\n";
+    echo '<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=' . esc_attr( $gtm_id ) . '" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>' . "\n";
+    echo "<!-- End Google Tag Manager (noscript) -->\n";
 }
 add_action( 'wp_body_open', 'ati_output_gtm_noscript' );
 
@@ -282,20 +297,18 @@ function ati_ajax_load_tracking_tags() {
     $ga_enabled  = get_option( 'ati_enable_ga4', false );
     $ga_id       = trim( get_option( 'ati_ga4_id', '' ) );
     $gtm_enabled = get_option( 'ati_enable_gtm', false );
-    $gtm_id      = trim( get_option( 'ati_gtm_id', '' ) );
 
-    $should_render = ( $gtm_enabled && ! empty( $gtm_id ) )
-        || ( ! $gtm_enabled && $ga_enabled && ! empty( $ga_id ) )
+    $should_render = ( ! $gtm_enabled && $ga_enabled && ! empty( $ga_id ) )
         || ( ! $gtm_enabled && $fb_enabled && ! empty( $fb_pixel_id ) && $has_marketing_consent );
 
     if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
         error_log( '[ATI DEBUG] Consenso marketing: ' . ( $has_marketing_consent ? 'SI' : 'NO' ) );
         error_log( '[ATI DEBUG] FB abilitato: ' . ( $fb_enabled ? 'SI' : 'NO' ) . ' | Pixel ID: ' . ( $fb_pixel_id ? 'OK' : 'VUOTO' ) );
         error_log( '[ATI DEBUG] GA4 abilitato: ' . ( $ga_enabled ? 'SI' : 'NO' ) . ' | GA ID: ' . ( $ga_id ? 'OK' : 'VUOTO' ) );
-        error_log( '[ATI DEBUG] GTM abilitato: ' . ( $gtm_enabled ? 'SI' : 'NO' ) . ' | GTM ID: ' . ( $gtm_id ? 'OK' : 'VUOTO' ) );
+        error_log( '[ATI DEBUG] GTM abilitato: ' . ( $gtm_enabled ? 'SI' : 'NO' ) );
     }
 
-    // Cattura l'output di ati_output_tags
+    // Cattura esclusivamente l'output dei tag diretti.
     ob_start();
     ati_output_tags();
     $tags_output = ob_get_clean();
@@ -315,8 +328,8 @@ function ati_ajax_load_tracking_tags() {
         if ( $ga_enabled && empty( $ga_id ) ) {
             $reasons[] = 'GA4 ID vuoto';
         }
-        if ( $gtm_enabled && empty( $gtm_id ) ) {
-            $reasons[] = 'GTM ID vuoto';
+        if ( $gtm_enabled ) {
+            $reasons[] = 'tag gestiti da Google Tag Manager';
         }
         if ( ! $fb_enabled && ! $ga_enabled && ! $gtm_enabled ) {
             $reasons[] = 'nessun tag abilitato';
@@ -373,7 +386,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // CARICAMENTO DINAMICO TAG DI TRACKING
   // ========================================
   
-  // Carica dinamicamente i tag di tracking (GA4, GTM, Facebook Pixel se consenso)
+  // Carica dinamicamente i tag diretti (GA4 e Facebook Pixel se consenso).
   function loadTrackingTags() {
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] 🔄 Caricamento dinamico tag di tracking...');
@@ -429,11 +442,13 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       });
   }
   
-  // Carica i tag immediatamente al DOMContentLoaded
-  if (document.readyState === 'loading') {
-    document.addEventListener('DOMContentLoaded', loadTrackingTags);
-  } else {
-    loadTrackingTags();
+  // I tag diretti sono necessari solo quando GTM non gestisce il tracking.
+  if (!isTagManagerEnabled) {
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', loadTrackingTags);
+    } else {
+      loadTrackingTags();
+    }
   }
   
   // ========================================
