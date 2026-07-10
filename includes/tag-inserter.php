@@ -318,7 +318,7 @@ function ati_ajax_load_tracking_tags() {
         error_log( '[ATI DEBUG] GTM abilitato: NO' );
     }
 
-    // Cattura esclusivamente l'output dei tag diretti.
+    // Capture exclusively the output of direct tags.
     ob_start();
     ati_output_tags();
     $tags_output = ob_get_clean();
@@ -393,8 +393,12 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // CARICAMENTO DINAMICO TAG DI TRACKING
   // ========================================
   
-  // Carica dinamicamente i tag diretti (GA4 e Facebook Pixel se consenso).
+  // Dynamically load direct tags (GA4 and Facebook Pixel if consent).
   function loadTrackingTags() {
+    if (isTagManagerEnabled) {
+      return;
+    }
+
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] 🔄 Caricamento dinamico tag di tracking...');
 <?php endif; ?>
@@ -449,7 +453,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       });
   }
   
-  // I tag diretti sono necessari solo quando GTM non gestisce il tracking.
+  // Direct tags are only necessary when GTM does not handle tracking.
   if (!isTagManagerEnabled) {
     if (document.readyState === 'loading') {
       document.addEventListener('DOMContentLoaded', loadTrackingTags);
