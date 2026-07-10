@@ -69,6 +69,9 @@ function ati_output_tags() {
         return;
     }
 
+    $gtm_enabled = get_option( 'ati_enable_gtm', false );
+    $gtm_id      = trim( get_option( 'ati_gtm_id', '' ) );
+
     // STEP 2: Controllo consenso marketing GDPR
     $has_marketing_consent = ati_has_marketing_consent();
     
@@ -88,7 +91,7 @@ function ati_output_tags() {
         error_log( '[ATI DEBUG] Facebook Pixel ID vuoto: ' . ( empty( $fb_pixel_id ) ? 'SI' : 'NO' ) );
     }
 
-    if ( $fb_enabled && ! empty( $fb_pixel_id ) ) {
+    if ( ! $gtm_enabled && $fb_enabled && ! empty( $fb_pixel_id ) ) {
         if ( $has_marketing_consent ) {
             // ✅ Consenso dato: Carica Facebook Pixel completo (client-side)
             if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
@@ -143,7 +146,7 @@ function ati_output_tags() {
     $ga_enabled = get_option( 'ati_enable_ga4', false );
     $ga_id      = trim( get_option( 'ati_ga4_id', '' ) );
 
-    if ( $ga_enabled && ! empty( $ga_id ) ) {
+    if ( ! $gtm_enabled && $ga_enabled && ! empty( $ga_id ) ) {
         ?>
         <!-- Google Analytics 4 -->
         <script async src="https://www.googletagmanager.com/gtag/js?id=<?php echo esc_attr( $ga_id ); ?>"></script>
@@ -156,9 +159,6 @@ function ati_output_tags() {
         <!-- End Google Analytics 4 -->
         <?php
     }
-
-    $gtm_enabled = get_option( 'ati_enable_gtm', false );
-    $gtm_id      = trim( get_option( 'ati_gtm_id', '' ) );
 
     if ( $gtm_enabled && ! empty( $gtm_id ) ) {
         ?>
@@ -213,6 +213,17 @@ function ati_ajax_reload_facebook_pixel() {
             'message' => 'Tracking disabilitato per utenti loggati'
         );
         wp_send_json( $response );
+    }
+
+    if ( get_option( 'ati_enable_gtm', false ) ) {
+        wp_send_json(
+            array(
+                'success'     => false,
+                'has_consent' => false,
+                'pixel_id'    => '',
+                'message'     => 'Facebook Pixel is managed by Google Tag Manager'
+            )
+        );
     }
     
     // Controlla se il consenso marketing è attivo
@@ -273,9 +284,9 @@ function ati_ajax_load_tracking_tags() {
     $gtm_enabled = get_option( 'ati_enable_gtm', false );
     $gtm_id      = trim( get_option( 'ati_gtm_id', '' ) );
 
-    $should_render = ( $ga_enabled && ! empty( $ga_id ) )
-        || ( $gtm_enabled && ! empty( $gtm_id ) )
-        || ( $fb_enabled && ! empty( $fb_pixel_id ) && $has_marketing_consent );
+    $should_render = ( $gtm_enabled && ! empty( $gtm_id ) )
+        || ( ! $gtm_enabled && $ga_enabled && ! empty( $ga_id ) )
+        || ( ! $gtm_enabled && $fb_enabled && ! empty( $fb_pixel_id ) && $has_marketing_consent );
 
     if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
         error_log( '[ATI DEBUG] Consenso marketing: ' . ( $has_marketing_consent ? 'SI' : 'NO' ) );
@@ -343,6 +354,7 @@ function fst_inline_tracking_js() {
     if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
         error_log( '[ATI DEBUG] Tracking JS caricato nel footer' );
     }
+    $gtm_enabled = get_option( 'ati_enable_gtm', false );
     ?>
 <script>
 // ========================================
@@ -354,6 +366,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 (function () {
   const endpoint = '<?php echo esc_js( home_url( '/wp-json/fst/v1/event' ) ); ?>';
   const ajaxUrl = window.fstAjaxUrl;
+  const isTagManagerEnabled = <?php echo $gtm_enabled ? 'true' : 'false'; ?>;
   window.consentCookieName = '<?php echo esc_js( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?>';
   
   // ========================================
@@ -540,7 +553,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     
     // NUOVO: Se Facebook Pixel è attivo (consenso marketing + pixel inizializzato),
     // invia anche a Facebook con stesso eventID per deduplica
-    if (window.marketingConsent && window.fbq && payload.type) {
+    if (!isTagManagerEnabled && window.marketingConsent && window.fbq && payload.type) {
       let fbEventName = payload.type;
       let fbParams = payload.customData || {};
       
@@ -579,7 +592,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST] 📘 Facebook Pixel event:', fbEventName, 'ID:', payload.eventID, 'External ID:', externalId);
 <?php endif; ?>
-    } else if (!window.fbq) {
+    } else if (!isTagManagerEnabled && !window.fbq) {
       // Se fbq non è definito, significa che il Pixel non è stato caricato
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.warn('[FST] ⚠️ Facebook Pixel non caricato - consenso mancante o script non inizializzato');
@@ -650,13 +663,13 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     });
 
   // Invia PageView a Facebook Pixel se il consenso è dato e lo script è già caricato
-  if (window.marketingConsent && window.fbq && !window.fstFbPageViewSent) {
+  if (!isTagManagerEnabled && window.marketingConsent && window.fbq && !window.fstFbPageViewSent) {
     <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] 📘 Invia PageView a Facebook Pixel (script già presente)');
     <?php endif; ?>
     fbq('track', 'PageView', {}, {eventID: pageViewID});
     window.fstFbPageViewSent = true; // Segna come inviato
-  } else if (!window.fbq && window.marketingConsent) {
+  } else if (!isTagManagerEnabled && !window.fbq && window.marketingConsent) {
    // Se fbq non è definito, significa che il Pixel non è stato caricato, ritentiamo fino a 5 tentativi ogni 500ms
     let attempts = 0;
     const maxAttempts = 5;
@@ -769,6 +782,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // ========================================
 })();
 </script>
+<?php if ( ! $gtm_enabled ) : ?>
 <script data-category="marketing">
 (function(){
   const consentCookie = window.consentCookieName || 'cmplz_marketing';
@@ -892,4 +906,5 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   setupConsentListener();
 })();
 </script>
+<?php endif; ?>
 <?php } ?>
