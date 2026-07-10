@@ -315,7 +315,6 @@ function ati_ajax_load_tracking_tags() {
         error_log( '[ATI DEBUG] Consenso marketing: ' . ( $has_marketing_consent ? 'SI' : 'NO' ) );
         error_log( '[ATI DEBUG] FB abilitato: ' . ( $fb_enabled ? 'SI' : 'NO' ) . ' | Pixel ID: ' . ( $fb_pixel_id ? 'OK' : 'VUOTO' ) );
         error_log( '[ATI DEBUG] GA4 abilitato: ' . ( $ga_enabled ? 'SI' : 'NO' ) . ' | GA ID: ' . ( $ga_id ? 'OK' : 'VUOTO' ) );
-        error_log( '[ATI DEBUG] GTM abilitato: NO' );
     }
 
     // Capture exclusively the output of direct tags.
