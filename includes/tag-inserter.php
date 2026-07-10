@@ -43,7 +43,8 @@ function ati_has_marketing_consent() {
 
 /**
  * Output direct tracking tags when Google Tag Manager is disabled.
- * 
+ *
+ * Handles only direct GA4 and Facebook Pixel tags for the AJAX loader.
  * Controlla i consensi cookie prima di inserire gli script di tracking.
  * Se il cookie di consenso non vale "allow", inserisce solo il tracking server-side.
  */
@@ -297,7 +298,7 @@ function ati_ajax_load_tracking_tags() {
             array(
                 'success'   => true,
                 'tags_html' => '',
-                'message'   => 'Tracking tags are managed by Google Tag Manager'
+                'message'   => 'Tracking tags are being managed by Google Tag Manager'
             )
         );
     }
@@ -308,7 +309,7 @@ function ati_ajax_load_tracking_tags() {
     $ga_enabled  = get_option( 'ati_enable_ga4', false );
     $ga_id       = trim( get_option( 'ati_ga4_id', '' ) );
 
-    $should_render = ( $ga_enabled && ! empty( $ga_id ) )
+    $should_render_direct_tags = ( $ga_enabled && ! empty( $ga_id ) )
         || ( $fb_enabled && ! empty( $fb_pixel_id ) && $has_marketing_consent );
 
     if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
@@ -323,7 +324,7 @@ function ati_ajax_load_tracking_tags() {
     $tags_output = ob_get_clean();
 
     $message = 'Tags loaded successfully';
-    if ( ! $should_render || empty( trim( $tags_output ) ) ) {
+    if ( ! $should_render_direct_tags || empty( trim( $tags_output ) ) ) {
         $reasons = array();
         if ( ! $has_marketing_consent ) {
             $reasons[] = 'consenso marketing non presente';
