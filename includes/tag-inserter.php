@@ -291,21 +291,31 @@ function ati_ajax_load_tracking_tags() {
         error_log( '[ATI DEBUG] === INIZIO ati_ajax_load_tracking_tags() ===' );
     }
 
+    $gtm_enabled = get_option( 'ati_enable_gtm', false );
+    if ( $gtm_enabled ) {
+        wp_send_json(
+            array(
+                'success'   => true,
+                'tags_html' => '',
+                'message'   => 'Tracking tags are managed by Google Tag Manager'
+            )
+        );
+    }
+
     $has_marketing_consent = ati_has_marketing_consent();
     $fb_enabled  = get_option( 'ati_enable_fb', false );
     $fb_pixel_id = trim( get_option( 'ati_fb_pixel_id', '' ) );
     $ga_enabled  = get_option( 'ati_enable_ga4', false );
     $ga_id       = trim( get_option( 'ati_ga4_id', '' ) );
-    $gtm_enabled = get_option( 'ati_enable_gtm', false );
 
-    $should_render = ( ! $gtm_enabled && $ga_enabled && ! empty( $ga_id ) )
-        || ( ! $gtm_enabled && $fb_enabled && ! empty( $fb_pixel_id ) && $has_marketing_consent );
+    $should_render = ( $ga_enabled && ! empty( $ga_id ) )
+        || ( $fb_enabled && ! empty( $fb_pixel_id ) && $has_marketing_consent );
 
     if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
         error_log( '[ATI DEBUG] Consenso marketing: ' . ( $has_marketing_consent ? 'SI' : 'NO' ) );
         error_log( '[ATI DEBUG] FB abilitato: ' . ( $fb_enabled ? 'SI' : 'NO' ) . ' | Pixel ID: ' . ( $fb_pixel_id ? 'OK' : 'VUOTO' ) );
         error_log( '[ATI DEBUG] GA4 abilitato: ' . ( $ga_enabled ? 'SI' : 'NO' ) . ' | GA ID: ' . ( $ga_id ? 'OK' : 'VUOTO' ) );
-        error_log( '[ATI DEBUG] GTM abilitato: ' . ( $gtm_enabled ? 'SI' : 'NO' ) );
+        error_log( '[ATI DEBUG] GTM abilitato: NO' );
     }
 
     // Cattura esclusivamente l'output dei tag diretti.
@@ -328,10 +338,7 @@ function ati_ajax_load_tracking_tags() {
         if ( $ga_enabled && empty( $ga_id ) ) {
             $reasons[] = 'GA4 ID vuoto';
         }
-        if ( $gtm_enabled ) {
-            $reasons[] = 'tag gestiti da Google Tag Manager';
-        }
-        if ( ! $fb_enabled && ! $ga_enabled && ! $gtm_enabled ) {
+        if ( ! $fb_enabled && ! $ga_enabled ) {
             $reasons[] = 'nessun tag abilitato';
         }
         $message = $reasons
