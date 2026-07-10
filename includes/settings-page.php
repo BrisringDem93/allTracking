@@ -80,7 +80,8 @@ function ati_settings_page() {
                             <legend class="screen-reader-text"><span>Opzioni di attivazione</span></legend>
                             <label><input type="checkbox" name="ati_enable_fb" value="1" <?php checked( get_option( 'ati_enable_fb', false ), '1' ); ?> /> <?php esc_html_e( 'Attiva Facebook Pixel', 'ati' ); ?></label><br />
                             <label><input type="checkbox" name="ati_enable_ga4" value="1" <?php checked( get_option( 'ati_enable_ga4', false ), '1' ); ?> /> <?php esc_html_e( 'Attiva GA4 (client-side)', 'ati' ); ?></label><br />
-                            <label><input type="checkbox" name="ati_enable_gtm" value="1" <?php checked( get_option( 'ati_enable_gtm', false ), '1' ); ?> /> <?php esc_html_e( 'Attiva Google Tag Manager', 'ati' ); ?></label><br />
+                            <label><input type="checkbox" name="ati_enable_gtm" value="1" <?php checked( get_option( 'ati_enable_gtm', false ), '1' ); ?> /> <?php esc_html_e( 'Attiva Google Tag Manager', 'ati' ); ?></label>
+                            <p class="description"><?php esc_html_e( 'Attenzione: attivando Google Tag Manager, il plugin non caricherà né invierà eventi a GA4 o Facebook Pixel lato client. Configura questi tag direttamente nel container GTM per evitare duplicazioni.', 'ati' ); ?></p>
                             <label><input type="checkbox" name="ati_disable_logged_in" value="1" <?php checked( get_option( 'ati_disable_logged_in', false ), '1' ); ?> /> <?php esc_html_e( 'Disattiva per utenti loggati', 'ati' ); ?></label>
                         </fieldset>
                     </td>
