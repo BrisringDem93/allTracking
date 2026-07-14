@@ -493,7 +493,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     var cm = document.cookie.match(new RegExp('(?:^|; )' + window.consentCookieName + '=([^;]+)'));
     if (cm && cm[1] === 'allow') return true;
 
-    // 2. iubenda: _iub_cs-XXXXX con purposes[2] = true (marketing)
+    // 2. iubenda: _iub_cs-XXXXX con purposes[2] = true (scopo 2 = Marketing/Pubblicità)
     var iub = document.cookie.match(/(?:^|; )_iub_cs-\d+=([^;]+)/);
     if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && d.purposes && d.purposes[2]) return true; } catch(e) {} }
 
@@ -501,7 +501,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     var cb = document.cookie.match(/(?:^|; )CookieConsent=([^;]+)/);
     if (cb) { try { if (decodeURIComponent(cb[1]).indexOf('marketing:true') !== -1) return true; } catch(e) {} }
 
-    // 4. OneTrust: OptanonConsent con groups C0004:1 (targeting/advertising)
+    // 4. OneTrust: OptanonConsent con groups C0004:1 (C0004 = Targeting/Pubblicità, :1 = consenso accordato)
     var ot = document.cookie.match(/(?:^|; )OptanonConsent=([^;]+)/);
     if (ot) { try { var g = new URLSearchParams(decodeURIComponent(ot[1])).get('groups') || ''; if (g.indexOf('C0004:1') !== -1) return true; } catch(e) {} }
 
@@ -855,7 +855,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     var match = document.cookie.match(new RegExp('(?:^|; )' + consentCookie + '=([^;]+)'));
     if (match && match[1] === 'allow') return true;
 
-    // 2. iubenda: _iub_cs-XXXXX con purposes[2] = true (marketing)
+    // 2. iubenda: _iub_cs-XXXXX con purposes[2] = true (scopo 2 = Marketing/Pubblicità)
     var iub = document.cookie.match(/(?:^|; )_iub_cs-\d+=([^;]+)/);
     if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && d.purposes && d.purposes[2]) return true; } catch(e) {} }
 
@@ -863,7 +863,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     var cb = document.cookie.match(/(?:^|; )CookieConsent=([^;]+)/);
     if (cb) { try { if (decodeURIComponent(cb[1]).indexOf('marketing:true') !== -1) return true; } catch(e) {} }
 
-    // 4. OneTrust: OptanonConsent con groups C0004:1 (targeting/advertising)
+    // 4. OneTrust: OptanonConsent con groups C0004:1 (C0004 = Targeting/Pubblicità, :1 = consenso accordato)
     var ot = document.cookie.match(/(?:^|; )OptanonConsent=([^;]+)/);
     if (ot) { try { var g = new URLSearchParams(decodeURIComponent(ot[1])).get('groups') || ''; if (g.indexOf('C0004:1') !== -1) return true; } catch(e) {} }
 
