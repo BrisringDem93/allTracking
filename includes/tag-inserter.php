@@ -260,10 +260,23 @@ add_action( 'wp_body_open', 'ati_output_gtm_noscript' );
  * AJAX handler per ricaricare Facebook Pixel quando cambia il consenso
  */
 function ati_ajax_reload_facebook_pixel() {
+  if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+    error_log( '[ATI DEBUG] === INIZIO ati_ajax_reload_facebook_pixel() ===' );
+  }
+
     // Verifica nonce per sicurezza
-    if ( ! wp_verify_nonce( $_POST['nonce'] ?? '', 'ati_reload_pixel' ) ) {
+  $nonce = $_POST['nonce'] ?? '';
+  if ( ! wp_verify_nonce( $nonce, 'ati_reload_pixel' ) ) {
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+      error_log( '[ATI DEBUG] ❌ Nonce non valido in ati_ajax_reload_facebook_pixel()' );
+      error_log( '[ATI DEBUG] Nonce ricevuto (prefix): ' . substr( sanitize_text_field( $nonce ), 0, 12 ) );
+    }
         wp_die( 'Nonce verification failed' );
     }
+
+  if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+    error_log( '[ATI DEBUG] ✅ Nonce valido in ati_ajax_reload_facebook_pixel()' );
+  }
     
     // NUOVO: Blocca completamente se utenti loggati sono disabilitati
     if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
@@ -318,10 +331,23 @@ add_action( 'wp_ajax_nopriv_ati_reload_facebook_pixel', 'ati_ajax_reload_faceboo
  * AJAX handler per caricare dinamicamente i tag di tracking
  */
 function ati_ajax_load_tracking_tags() {
+  if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+    error_log( '[ATI DEBUG] === RICHIESTA ati_ajax_load_tracking_tags() ricevuta ===' );
+  }
+
     // Verifica nonce per sicurezza
-    if ( ! wp_verify_nonce( $_POST['nonce'] ?? '', 'ati_load_tags' ) ) {
+  $nonce = $_POST['nonce'] ?? '';
+  if ( ! wp_verify_nonce( $nonce, 'ati_load_tags' ) ) {
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+      error_log( '[ATI DEBUG] ❌ Nonce non valido in ati_ajax_load_tracking_tags()' );
+      error_log( '[ATI DEBUG] Nonce ricevuto (prefix): ' . substr( sanitize_text_field( $nonce ), 0, 12 ) );
+    }
         wp_die( 'Nonce verification failed' );
     }
+
+  if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+    error_log( '[ATI DEBUG] ✅ Nonce valido in ati_ajax_load_tracking_tags()' );
+  }
     
     // NUOVO: Blocca completamente se utenti loggati sono disabilitati
     if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
@@ -568,7 +594,12 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   function getExternalId() {
     const cookieName = 'fst_uid';
     const match = document.cookie.match(new RegExp('(?:^|; )' + cookieName + '=([^;]+)'));
-    if (match) return decodeURIComponent(match[1]);
+    if (match) {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.log('[FST UID] ✅ Cookie fst_uid gia presente:', decodeURIComponent(match[1]));
+<?php endif; ?>
+      return decodeURIComponent(match[1]);
+    }
 
     // Usa o crea UUID temporaneo (non ancora persistito nel cookie)
     if (!window._fstTempUid) {
@@ -577,19 +608,48 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
         const v = c == 'x' ? r : (r & 0x3 | 0x8);
         return v.toString(16);
       });
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.log('[FST UID] 🆕 UUID temporaneo creato:', window._fstTempUid);
+<?php endif; ?>
     }
 
     // Persiste il cookie solo dopo il consenso marketing
     if (window.marketingConsent) {
       const expires = new Date(Date.now() + 63072000 * 1000).toUTCString();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.log('[FST UID] 🍪 Tentativo scrittura cookie fst_uid. consent=true, expires=', expires);
+<?php endif; ?>
       document.cookie = cookieName + '=' + encodeURIComponent(window._fstTempUid) + '; expires=' + expires + '; path=/; SameSite=Lax';
+
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      const persisted = document.cookie.match(/(?:^|; )fst_uid=([^;]+)/);
+      if (persisted) {
+        console.log('[FST UID] ✅ Cookie fst_uid scritto correttamente:', decodeURIComponent(persisted[1]));
+      } else {
+        console.warn('[FST UID] ❌ Cookie fst_uid NON trovato dopo la scrittura');
+      }
+<?php endif; ?>
+    } else {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.log('[FST UID] ⏸️ Cookie fst_uid non persistito: consenso marketing assente');
+<?php endif; ?>
     }
 
     return window._fstTempUid;
   }
 
   // Esposto globalmente: permette agli handler di consenso (script 2) di persistere fst_uid
-  window.fstPersistUid = getExternalId;
+  window.fstPersistUid = function() {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST UID] 🔄 fstPersistUid() invocata');
+<?php endif; ?>
+    const uid = getExternalId();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    const hasCookie = /(?:^|; )fst_uid=/.test(document.cookie);
+    console.log('[FST UID] 📌 Stato dopo fstPersistUid(): uid=' + uid + ', cookiePresente=' + (hasCookie ? 'SI' : 'NO'));
+<?php endif; ?>
+    return uid;
+  };
   
   // ========================================
   // FUNZIONI HELPER PER FBCLID
@@ -885,6 +945,28 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 (function(){
   const consentCookie = window.consentCookieName || 'cmplz_marketing';
 
+  function getCookieValue(name){
+    const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]+)'));
+    return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  function logConsentSnapshot(context){
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    const consentValue = getCookieValue(consentCookie);
+    const uidValue = getCookieValue('fst_uid');
+    console.log('[FST CONSENT] 📋 Snapshot [' + context + ']', {
+      marketingConsent: !!window.marketingConsent,
+      consentCookieName: consentCookie,
+      consentCookieValue: consentValue,
+      fstUidPresent: !!uidValue,
+      fstUidValue: uidValue,
+      fbqLoaded: !!window.fbq,
+      page: window.location.href,
+      ts: new Date().toISOString()
+    });
+<?php endif; ?>
+  }
+
   function hasMarketingConsent(){
     // 1. Cookie configurato nelle impostazioni (default Complianz: cmplz_marketing=allow)
     var match = document.cookie.match(new RegExp('(?:^|; )' + consentCookie + '=([^;]+)'));
@@ -981,19 +1063,29 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 
   function setupConsentListener(){
     let currentConsent = hasMarketingConsent();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    logConsentSnapshot('setup-start');
+<?php endif; ?>
     setInterval(()=>{
       const newConsent = hasMarketingConsent();
       if(newConsent !== currentConsent){
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
         console.log('[FST] 🔄 Cambio consenso rilevato:', currentConsent, '->', newConsent);
+        logConsentSnapshot('consent-change-detected-before-update');
 <?php endif; ?>
         currentConsent = newConsent;
         window.marketingConsent = newConsent;
         if(newConsent){
           window.fstPersistUid && window.fstPersistUid();
           loadFacebookPixelDynamically();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+          logConsentSnapshot('consent-change-after-accept');
+<?php endif; ?>
         }else{
           removeFacebookPixel();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+          logConsentSnapshot('consent-change-after-revoke');
+<?php endif; ?>
         }
       }
     },500);
@@ -1005,43 +1097,76 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 
   // Complianz
   document.addEventListener('cmplz_marketing_accept', () => {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST CONSENT] ✅ Evento cmplz_marketing_accept ricevuto');
+<?php endif; ?>
     window.marketingConsent = true;
     window.fstPersistUid && window.fstPersistUid();
     loadFacebookPixelDynamically();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    logConsentSnapshot('event-cmplz_marketing_accept');
+<?php endif; ?>
   });
 
   document.addEventListener('cmplz_marketing_decline', () => {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST CONSENT] ❌ Evento cmplz_marketing_decline ricevuto');
+<?php endif; ?>
     window.marketingConsent = false;
     removeFacebookPixel();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    logConsentSnapshot('event-cmplz_marketing_decline');
+<?php endif; ?>
   });
 
   // iubenda
   document.addEventListener('iubenda_consent_given', function() {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST CONSENT] ✅ Evento iubenda_consent_given ricevuto');
+<?php endif; ?>
     if (hasMarketingConsent()) {
       window.marketingConsent = true;
       window.fstPersistUid && window.fstPersistUid();
       loadFacebookPixelDynamically();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      logConsentSnapshot('event-iubenda_consent_given');
+<?php endif; ?>
     }
   });
 
   // Cookiebot
   window.addEventListener('CookiebotOnAccept', function() {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST CONSENT] ✅ Evento CookiebotOnAccept ricevuto');
+<?php endif; ?>
     if (hasMarketingConsent()) {
       window.marketingConsent = true;
       window.fstPersistUid && window.fstPersistUid();
       loadFacebookPixelDynamically();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      logConsentSnapshot('event-CookiebotOnAccept');
+<?php endif; ?>
     }
   });
 
   // OneTrust
   document.addEventListener('OneTrustGroupsUpdated', function() {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST CONSENT] 🔄 Evento OneTrustGroupsUpdated ricevuto');
+<?php endif; ?>
     if (hasMarketingConsent()) {
       window.marketingConsent = true;
       window.fstPersistUid && window.fstPersistUid();
       loadFacebookPixelDynamically();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      logConsentSnapshot('event-OneTrustGroupsUpdated-accept');
+<?php endif; ?>
     } else {
       window.marketingConsent = false;
       removeFacebookPixel();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      logConsentSnapshot('event-OneTrustGroupsUpdated-revoke');
+<?php endif; ?>
     }
   });
 
@@ -1049,13 +1174,22 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   <?php $custom_event = get_option( 'ati_consent_custom_event', '' ); ?>
   <?php if ( ! empty( $custom_event ) ) : ?>
   document.addEventListener('<?php echo esc_js( $custom_event ); ?>', function() {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST CONSENT] ✅ Evento custom <?php echo esc_js( $custom_event ); ?> ricevuto');
+<?php endif; ?>
     window.marketingConsent = true;
     window.fstPersistUid && window.fstPersistUid();
     loadFacebookPixelDynamically();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    logConsentSnapshot('event-custom-consent');
+<?php endif; ?>
   });
   <?php endif; ?>
 
   window.marketingConsent = hasMarketingConsent();
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+  logConsentSnapshot('initial-marketing-consent');
+<?php endif; ?>
   
   // TRIGGER 1 DISABILITATO: Non caricare automaticamente Facebook Pixel al caricamento pagina
   // Il pixel verrà caricato solo tramite eventi di cambio consenso o eventi Complianz
