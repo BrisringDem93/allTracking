@@ -1039,9 +1039,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // ========================================
 })();
 </script>
-<?php if ( ! $gtm_enabled ) : ?>
 <script data-category="marketing">
 (function(){
+  const isTagManagerEnabled = <?php echo $gtm_enabled ? 'true' : 'false'; ?>;
   const consentCookie = window.consentCookieName || 'cmplz_marketing';
 
   function getCookieValue(name){
@@ -1090,6 +1090,12 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   const fbPixelScriptUrl = '<?php echo esc_js( plugin_dir_url( __FILE__ ) . '../assets/js/facebook-pixel.js' ); ?>';
 
   function loadFacebookPixelDynamically(){
+    if(isTagManagerEnabled){
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.log('[FST] ⏸️ Facebook Pixel diretto non caricato: gestito da Tag Manager');
+<?php endif; ?>
+      return;
+    }
     if(window.fbq){
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST] ✅ Facebook Pixel già caricato');
@@ -1148,6 +1154,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   }
 
   function removeFacebookPixel(){
+    if(isTagManagerEnabled){
+      return;
+    }
     if(window.fbq){
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST] 🔄 Rimozione Facebook Pixel...');
@@ -1299,5 +1308,4 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   setupConsentListener();
 })();
 </script>
-<?php endif; ?>
 <?php } ?>
