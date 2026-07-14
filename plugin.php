@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Quick Tracking Integration
  * Description: Inserisce automaticamente Facebook Pixel, Google Analytics 4 e Google Tag Manager con una semplice configurazione.
- * Version: 0.7.2
+ * Version: 0.7.4
  * Author: Francesco de Minicis
  */
 
