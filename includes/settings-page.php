@@ -20,7 +20,8 @@ function ati_register_settings() {
     register_setting( 'ati_settings', 'ati_enable_ga4', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_enable_gtm', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_disable_logged_in', array( 'sanitize_callback' => 'sanitize_text_field' ) );
-    register_setting( 'ati_settings', 'ati_consent_cookie_name', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => 'cmplz_marketing' ) );
+    register_setting( 'ati_settings', 'ati_consent_cookie_name', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ) );
+    register_setting( 'ati_settings', 'ati_consent_custom_event', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ) );
     register_setting( 'ati_settings', 'ati_server_endpoint', array( 'sanitize_callback' => 'esc_url_raw' ) );
     register_setting( 'ati_settings', 'ati_server_auth_key', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_server_auth_value', array( 'sanitize_callback' => 'sanitize_text_field' ) );
@@ -89,8 +90,15 @@ function ati_settings_page() {
                 <tr>
                     <th scope="row"><label for="ati_consent_cookie_name">Nome cookie consenso</label></th>
                     <td>
-                        <input name="ati_consent_cookie_name" type="text" id="ati_consent_cookie_name" value="<?php echo esc_attr( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?>" class="regular-text" />
-                        <p class="description">Cookie utilizzato per verificare il consenso marketing</p>
+                        <input name="ati_consent_cookie_name" type="text" id="ati_consent_cookie_name" value="<?php echo esc_attr( get_option( 'ati_consent_cookie_name', '' ) ); ?>" class="regular-text" placeholder="opzionale, es: mio_cookie_marketing" />
+                        <p class="description">Cookie custom opzionale (valore atteso: "allow"). Se vuoto, il plugin rileva automaticamente Complianz, iubenda, Cookiebot e OneTrust.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="ati_consent_custom_event">Evento JS consenso custom</label></th>
+                    <td>
+                        <input name="ati_consent_custom_event" type="text" id="ati_consent_custom_event" value="<?php echo esc_attr( get_option( 'ati_consent_custom_event', '' ) ); ?>" class="regular-text" placeholder="es: myConsentAccepted" />
+                        <p class="description">Evento JavaScript personalizzato che indica il consenso marketing. Lascia vuoto per usare solo il rilevamento automatico dei banner.</p>
                     </td>
                 </tr>
             </table>
@@ -150,9 +158,24 @@ function ati_settings_page() {
                         <span id="consent-status">
                             <script>
                             (function(){
-                                const cookieName = '<?php echo esc_js( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?>';
-                                const match = document.cookie.match(new RegExp('(?:^|; )' + cookieName + '=([^;]+)'));
-                                const hasConsent = match && match[1] === 'allow';
+                                const customCookie = '<?php echo esc_js( trim( (string) get_option( 'ati_consent_cookie_name', '' ) ) ); ?>';
+                                function cookie(name) {
+                                    const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+                                    const match = document.cookie.match(new RegExp('(?:^|; )' + escaped + '=([^;]+)'));
+                                    return match ? decodeURIComponent(match[1]) : null;
+                                }
+                                let hasConsent = customCookie !== '' && cookie(customCookie) === 'allow';
+                                hasConsent = hasConsent || cookie('cmplz_marketing') === 'allow';
+                                try {
+                                    const iubendaMatch = document.cookie.match(/(?:^|; )_iub_cs-\d+=([^;]+)/);
+                                    const iubenda = iubendaMatch ? JSON.parse(decodeURIComponent(iubendaMatch[1])) : null;
+                                    hasConsent = hasConsent || !!(iubenda && (iubenda.consent === true || (iubenda.purposes && iubenda.purposes[5] === true)));
+                                } catch (e) {}
+                                hasConsent = hasConsent || (cookie('CookieConsent') || '').indexOf('marketing:true') !== -1;
+                                try {
+                                    const groups = new URLSearchParams(cookie('OptanonConsent') || '').get('groups') || '';
+                                    hasConsent = hasConsent || groups.indexOf('C0004:1') !== -1;
+                                } catch (e) {}
                                 document.getElementById('consent-status').innerHTML = hasConsent ?
                                     '<span style="color: green;">✅ Consenso marketing attivo</span>' :
                                     '<span style="color: orange;">⚠️ Consenso marketing non rilevato</span>';
@@ -160,8 +183,8 @@ function ati_settings_page() {
                             </script>
                         </span>
                         <p class="description">
-                            Il plugin rispetta il cookie <code><?php echo esc_html( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?></code>.
-                            Solo con consenso = "allow" vengono caricati i pixel client-side.
+                            Il plugin rileva automaticamente i cookie dei CMP supportati<?php $ati_custom_cookie = trim( (string) get_option( 'ati_consent_cookie_name', '' ) ); if ( '' !== $ati_custom_cookie ) : ?> e il cookie custom <code><?php echo esc_html( $ati_custom_cookie ); ?></code><?php endif; ?>.
+                            Solo con consenso marketing valido vengono caricati i pixel client-side.
                         </p>
                     </td>
                 </tr>

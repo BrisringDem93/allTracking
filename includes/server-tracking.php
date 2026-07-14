@@ -289,7 +289,22 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
     
     // STEP 7: Invia anche a GA4 server-side (se abilitato)
     if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
-        fst_send_to_ga4( strtolower( $type ), [ 'label' => $label ] );
+        // Mappa i nomi degli eventi ai nomi ufficiali GA4 (Measurement Protocol)
+        $ga4_name_map = [
+            'Lead'         => 'generate_lead',   // Evento raccomandato GA4 per form lead
+            'FormSubmit'   => 'generate_lead',
+            'FormStart'    => 'form_start',       // Evento raccomandato GA4 per inizio form
+            'deepInterest' => 'deep_interest',    // Evento personalizzato
+            'deepPlus'     => 'deep_plus',        // Evento personalizzato
+        ];
+        $ga4_event_name = isset( $ga4_name_map[ $type ] )
+            ? $ga4_name_map[ $type ]
+            // Fallback camelCase → snake_case: lcfirst() abbassa il primo carattere (evita underscore
+            // iniziale), poi il regex aggiunge '_' davanti ad ogni lettera maiuscola rimanente.
+            // Nota: non gestisce acronyms consecutivi (es. "HTTPError" → "h_t_t_p_error");
+            // tutti i tipi previsti (ButtonClick ecc.) producono risultati corretti.
+            : strtolower( preg_replace( '/([A-Z])/', '_$1', lcfirst( $type ) ) );
+        fst_send_to_ga4( $ga4_event_name, [ 'label' => $label ] );
     }
 
     // STEP 8: Restituisce risposta JSON di successo
@@ -437,6 +452,13 @@ function fst_get_uid() {
         return sanitize_text_field( $_COOKIE[ $cookie ] );
     }
     
+    // Senza consenso marketing non creiamo né persistiamo alcun identificatore (GDPR).
+    // tag-inserter.php è caricato prima di server-tracking.php in plugin.php,
+    // quindi ati_has_marketing_consent() è sempre disponibile.
+    if ( ! ati_has_marketing_consent() ) {
+        return '';
+    }
+
     // Genera nuovo UUID4 unico e lo salva nel cookie per 2 anni
     $uid = wp_generate_uuid4();
     setcookie( $cookie, $uid, time() + 63072000, COOKIEPATH, COOKIE_DOMAIN );
@@ -561,8 +583,26 @@ function fst_send_to_ga4( string $eventName, array $params = [] ) {
                 rawurlencode( $measurement_id ) . '&api_secret=' . rawurlencode( $api_secret );
     
     // STEP 3: Costruisce payload nel formato GA4
+    $client_id = fst_get_uid();
+    // GA4 richiede un client_id non vuoto.
+    // Fallback 1: cookie _ga (formato GA1.x.XXXXXXXXXX.XXXXXXXXXX) — preserva la sessione GA4.
+    // Fallback 2: UUID casuale di richiesta (limita cross-session attribution, usato solo come sicurezza).
+    if ( empty( $client_id ) && isset( $_COOKIE['_ga'] ) ) {
+        $ga_parts = explode( '.', $_COOKIE['_ga'] );
+        if ( count( $ga_parts ) >= 4 ) {
+            // Sanitizza: il client_id GA4 contiene solo cifre e un punto separatore.
+            $part2 = preg_replace( '/[^0-9]/', '', $ga_parts[2] );
+            $part3 = preg_replace( '/[^0-9]/', '', $ga_parts[3] );
+            if ( $part2 !== '' && $part3 !== '' ) {
+                $client_id = $part2 . '.' . $part3;
+            }
+        }
+    }
+    if ( empty( $client_id ) ) {
+        $client_id = wp_generate_uuid4();
+    }
     $body = [
-        'client_id' => fst_get_uid(),                           // Stesso ID utente di Facebook
+        'client_id' => $client_id,                              // Stesso ID utente di Facebook (o fallback)
         'events'    => [ [ 'name' => $eventName, 'params' => $params ] ], // Array eventi
     ];
     
