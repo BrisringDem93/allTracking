@@ -437,9 +437,14 @@ function fst_get_uid() {
         return sanitize_text_field( $_COOKIE[ $cookie ] );
     }
     
-    // Genera nuovo UUID4 unico e lo salva nel cookie per 2 anni
+    // Genera nuovo UUID4 unico
     $uid = wp_generate_uuid4();
-    setcookie( $cookie, $uid, time() + 63072000, COOKIEPATH, COOKIE_DOMAIN );
+
+    // Persiste il cookie SOLO se il consenso marketing è stato accordato (GDPR)
+    if ( function_exists( 'ati_has_marketing_consent' ) && ati_has_marketing_consent() ) {
+        setcookie( $cookie, $uid, time() + 63072000, COOKIEPATH, COOKIE_DOMAIN );
+    }
+
     return $uid;
 }
 

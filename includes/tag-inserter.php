@@ -24,18 +24,46 @@ function ati_has_marketing_consent() {
 
     $cookie_name = get_option( 'ati_consent_cookie_name', 'cmplz_marketing' );
 
-    // Controlla il cookie definito nelle impostazioni
+    // 1. Cookie configurato nelle impostazioni (default Complianz: cmplz_marketing=allow)
     if ( isset( $_COOKIE[ $cookie_name ] ) ) {
         $consent_value = $_COOKIE[ $cookie_name ];
         if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
             error_log( '[ATI DEBUG] Cookie ' . $cookie_name . ' trovato: ' . $consent_value );
             error_log( '[ATI DEBUG] Consenso valido: ' . ( $consent_value === 'allow' ? 'SI' : 'NO' ) );
         }
-        return $consent_value === 'allow';
+        if ( $consent_value === 'allow' ) {
+            return true;
+        }
+    }
+
+    // 2. iubenda: _iub_cs-XXXXX con purposes[2] = true (scopo 2 = Marketing/Pubblicità)
+    foreach ( $_COOKIE as $name => $value ) {
+        if ( preg_match( '/^_iub_cs-\d+$/', $name ) ) {
+            $data = json_decode( urldecode( $value ), true );
+            if ( isset( $data['purposes'][2] ) && $data['purposes'][2] ) {
+                return true;
+            }
+        }
+    }
+
+    // 3. Cookiebot: CookieConsent con marketing:true
+    if ( isset( $_COOKIE['CookieConsent'] ) ) {
+        if ( strpos( urldecode( $_COOKIE['CookieConsent'] ), 'marketing:true' ) !== false ) {
+            return true;
+        }
+    }
+
+    // 4. OneTrust: OptanonConsent con groups C0004:1 (C0004 = Targeting/Pubblicità, :1 = consenso accordato)
+    if ( isset( $_COOKIE['OptanonConsent'] ) ) {
+        parse_str( urldecode( $_COOKIE['OptanonConsent'] ), $ot_params );
+        $groups = isset( $ot_params['groups'] ) ? $ot_params['groups'] : '';
+        if ( strpos( $groups, 'C0004:1' ) !== false ) {
+            return true;
+        }
     }
 
     if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
-        error_log( '[ATI DEBUG] Cookie ' . $cookie_name . ' NON trovato' );
+        error_log( '[ATI DEBUG] Nessun consenso marketing trovato' );
     }
     // Se il cookie non esiste, assumiamo nessun consenso per sicurezza GDPR
     return false;
