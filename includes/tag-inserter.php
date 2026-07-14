@@ -28,10 +28,10 @@ function ati_has_marketing_consent() {
         error_log( '[ATI DEBUG] Cookie disponibili: ' . json_encode( $_COOKIE ) );
     }
 
-    $cookie_name = get_option( 'ati_consent_cookie_name', 'cmplz_marketing' );
+    $cookie_name = trim( (string) get_option( 'ati_consent_cookie_name', '' ) );
 
-    // 1. Cookie configurato nelle impostazioni (default Complianz: cmplz_marketing=allow)
-    if ( isset( $_COOKIE[ $cookie_name ] ) ) {
+    // 1. Cookie custom configurato nelle impostazioni (opzionale, valore atteso: allow)
+    if ( '' !== $cookie_name && isset( $_COOKIE[ $cookie_name ] ) ) {
         $consent_value = $_COOKIE[ $cookie_name ];
         if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
             error_log( '[ATI DEBUG] Cookie ' . $cookie_name . ' trovato: ' . $consent_value );
@@ -42,24 +42,32 @@ function ati_has_marketing_consent() {
         }
     }
 
-    // 2. iubenda: _iub_cs-XXXXX con purposes[2] = true (scopo 2 = Marketing/Pubblicità)
+    // 2. Complianz: cmplz_marketing=allow
+    if ( isset( $_COOKIE['cmplz_marketing'] ) && 'allow' === $_COOKIE['cmplz_marketing'] ) {
+        return $cached = true;
+    }
+
+    // 3. iubenda: consenso globale oppure purpose 5 (Marketing)
     foreach ( $_COOKIE as $name => $value ) {
         if ( preg_match( '/^_iub_cs-\d+$/', $name ) ) {
             $data = json_decode( urldecode( $value ), true );
-            if ( is_array( $data ) && isset( $data['purposes'][2] ) && $data['purposes'][2] ) {
+            if ( is_array( $data ) && (
+                ( isset( $data['consent'] ) && true === $data['consent'] )
+                || ( isset( $data['purposes'][5] ) && true === $data['purposes'][5] )
+            ) ) {
                 return $cached = true;
             }
         }
     }
 
-    // 3. Cookiebot: CookieConsent con marketing:true
+    // 4. Cookiebot: CookieConsent con marketing:true
     if ( isset( $_COOKIE['CookieConsent'] ) ) {
         if ( strpos( urldecode( $_COOKIE['CookieConsent'] ), 'marketing:true' ) !== false ) {
             return $cached = true;
         }
     }
 
-    // 4. OneTrust: OptanonConsent con groups C0004:1 (C0004 = Targeting/Pubblicità, :1 = consenso accordato)
+    // 5. OneTrust: OptanonConsent con groups C0004:1 (C0004 = Targeting/Pubblicità, :1 = consenso accordato)
     // Usa regex per estrarre il parametro 'groups' in modo sicuro, senza parse_str
     if ( isset( $_COOKIE['OptanonConsent'] ) ) {
         if ( preg_match( '/(?:^|&)groups=([^&]*)/', urldecode( $_COOKIE['OptanonConsent'] ), $ot_match ) ) {
@@ -458,7 +466,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   const endpoint = '<?php echo esc_js( home_url( '/wp-json/fst/v1/event' ) ); ?>';
   const ajaxUrl = window.fstAjaxUrl;
   const isTagManagerEnabled = <?php echo $gtm_enabled ? 'true' : 'false'; ?>;
-  window.consentCookieName = '<?php echo esc_js( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?>';
+  window.consentCookieName = '<?php echo esc_js( trim( (string) get_option( 'ati_consent_cookie_name', '' ) ) ); ?>';
   
   // ========================================
   // CARICAMENTO DINAMICO TAG DI TRACKING
@@ -550,19 +558,25 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php endif; ?>
 
   window.marketingConsent = (function() {
-    // 1. Cookie configurato nelle impostazioni (default Complianz: cmplz_marketing=allow)
-    var cm = document.cookie.match(new RegExp('(?:^|; )' + window.consentCookieName + '=([^;]+)'));
-    if (cm && cm[1] === 'allow') return true;
+    // 1. Cookie custom configurato nelle impostazioni (opzionale)
+    if (window.consentCookieName) {
+      var custom = document.cookie.match(new RegExp('(?:^|; )' + window.consentCookieName + '=([^;]+)'));
+      if (custom && decodeURIComponent(custom[1]) === 'allow') return true;
+    }
 
-    // 2. iubenda: _iub_cs-XXXXX con purposes[2] = true (scopo 2 = Marketing/Pubblicità)
+    // 2. Complianz
+    var cm = document.cookie.match(/(?:^|; )cmplz_marketing=([^;]+)/);
+    if (cm && decodeURIComponent(cm[1]) === 'allow') return true;
+
+    // 3. iubenda: consenso globale oppure purpose 5 (Marketing)
     var iub = document.cookie.match(/(?:^|; )_iub_cs-\d+=([^;]+)/);
-    if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && d.purposes && d.purposes[2]) return true; } catch(e) {} }
+    if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && (d.consent === true || (d.purposes && d.purposes[5] === true))) return true; } catch(e) {} }
 
-    // 3. Cookiebot: CookieConsent con marketing:true
+    // 4. Cookiebot: CookieConsent con marketing:true
     var cb = document.cookie.match(/(?:^|; )CookieConsent=([^;]+)/);
     if (cb) { try { if (decodeURIComponent(cb[1]).indexOf('marketing:true') !== -1) return true; } catch(e) {} }
 
-    // 4. OneTrust: OptanonConsent con groups C0004:1 (C0004 = Targeting/Pubblicità, :1 = consenso accordato)
+    // 5. OneTrust: OptanonConsent con groups C0004:1 (C0004 = Targeting/Pubblicità, :1 = consenso accordato)
     var ot = document.cookie.match(/(?:^|; )OptanonConsent=([^;]+)/);
     if (ot) { try { var g = new URLSearchParams(decodeURIComponent(ot[1])).get('groups') || ''; if (g.indexOf('C0004:1') !== -1) return true; } catch(e) {} }
 
@@ -1042,7 +1056,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <script data-category="marketing">
 (function(){
   const isTagManagerEnabled = <?php echo $gtm_enabled ? 'true' : 'false'; ?>;
-  const consentCookie = window.consentCookieName || 'cmplz_marketing';
+  const consentCookie = window.consentCookieName || '';
 
   function getCookieValue(name){
     const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]+)'));
@@ -1067,19 +1081,25 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   }
 
   function hasMarketingConsent(){
-    // 1. Cookie configurato nelle impostazioni (default Complianz: cmplz_marketing=allow)
-    var match = document.cookie.match(new RegExp('(?:^|; )' + consentCookie + '=([^;]+)'));
-    if (match && match[1] === 'allow') return true;
+    // 1. Cookie custom configurato nelle impostazioni (opzionale)
+    if (consentCookie) {
+      var match = document.cookie.match(new RegExp('(?:^|; )' + consentCookie + '=([^;]+)'));
+      if (match && decodeURIComponent(match[1]) === 'allow') return true;
+    }
 
-    // 2. iubenda: _iub_cs-XXXXX con purposes[2] = true (scopo 2 = Marketing/Pubblicità)
+    // 2. Complianz
+    var cm = document.cookie.match(/(?:^|; )cmplz_marketing=([^;]+)/);
+    if (cm && decodeURIComponent(cm[1]) === 'allow') return true;
+
+    // 3. iubenda: consenso globale oppure purpose 5 (Marketing)
     var iub = document.cookie.match(/(?:^|; )_iub_cs-\d+=([^;]+)/);
-    if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && d.purposes && d.purposes[2]) return true; } catch(e) {} }
+    if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && (d.consent === true || (d.purposes && d.purposes[5] === true))) return true; } catch(e) {} }
 
-    // 3. Cookiebot: CookieConsent con marketing:true
+    // 4. Cookiebot: CookieConsent con marketing:true
     var cb = document.cookie.match(/(?:^|; )CookieConsent=([^;]+)/);
     if (cb) { try { if (decodeURIComponent(cb[1]).indexOf('marketing:true') !== -1) return true; } catch(e) {} }
 
-    // 4. OneTrust: OptanonConsent con groups C0004:1 (C0004 = Targeting/Pubblicità, :1 = consenso accordato)
+    // 5. OneTrust: OptanonConsent con groups C0004:1 (C0004 = Targeting/Pubblicità, :1 = consenso accordato)
     var ot = document.cookie.match(/(?:^|; )OptanonConsent=([^;]+)/);
     if (ot) { try { var g = new URLSearchParams(decodeURIComponent(ot[1])).get('groups') || ''; if (g.indexOf('C0004:1') !== -1) return true; } catch(e) {} }
 
@@ -1169,8 +1189,38 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     }
   }
 
+  let currentConsent = hasMarketingConsent();
+
+  function syncConsentState(context){
+    // I CMP aggiornano cookie/dataLayer in momenti leggermente diversi: ogni segnale
+    // deve rileggere la sorgente di verità e non dedurre lo stato dal nome evento.
+    const newConsent = hasMarketingConsent();
+    const changed = newConsent !== currentConsent;
+    currentConsent = newConsent;
+    window.marketingConsent = newConsent;
+
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST CONSENT] Sincronizzazione [' + context + ']:', newConsent);
+<?php endif; ?>
+
+    if(newConsent){
+      window.fstPersistUid && window.fstPersistUid();
+      loadFacebookPixelDynamically();
+    }else{
+      removeFacebookPixel();
+    }
+
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    if(changed) logConsentSnapshot('consent-change-' + context);
+<?php endif; ?>
+  }
+
+  function syncConsentAfterCmpUpdate(context){
+    // Lascia terminare al CMP la scrittura del cookie prima di rileggerlo.
+    window.setTimeout(function(){ syncConsentState(context); }, 0);
+  }
+
   function setupConsentListener(){
-    let currentConsent = hasMarketingConsent();
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     logConsentSnapshot('setup-start');
 <?php endif; ?>
@@ -1181,20 +1231,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
         console.log('[FST] 🔄 Cambio consenso rilevato:', currentConsent, '->', newConsent);
         logConsentSnapshot('consent-change-detected-before-update');
 <?php endif; ?>
-        currentConsent = newConsent;
-        window.marketingConsent = newConsent;
-        if(newConsent){
-          window.fstPersistUid && window.fstPersistUid();
-          loadFacebookPixelDynamically();
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-          logConsentSnapshot('consent-change-after-accept');
-<?php endif; ?>
-        }else{
-          removeFacebookPixel();
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-          logConsentSnapshot('consent-change-after-revoke');
-<?php endif; ?>
-        }
+        syncConsentState('cookie-poll');
       }
     },500);
   }
@@ -1203,79 +1240,42 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // LISTENER CONSENSO MULTI-BANNER
   // ========================================
 
-  // Complianz
-  document.addEventListener('cmplz_marketing_accept', () => {
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    console.log('[FST CONSENT] ✅ Evento cmplz_marketing_accept ricevuto');
-<?php endif; ?>
-    window.marketingConsent = true;
-    window.fstPersistUid && window.fstPersistUid();
-    loadFacebookPixelDynamically();
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    logConsentSnapshot('event-cmplz_marketing_accept');
-<?php endif; ?>
-  });
-
-  document.addEventListener('cmplz_marketing_decline', () => {
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    console.log('[FST CONSENT] ❌ Evento cmplz_marketing_decline ricevuto');
-<?php endif; ?>
-    window.marketingConsent = false;
-    removeFacebookPixel();
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    logConsentSnapshot('event-cmplz_marketing_decline');
-<?php endif; ?>
-  });
-
-  // iubenda
-  document.addEventListener('iubenda_consent_given', function() {
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    console.log('[FST CONSENT] ✅ Evento iubenda_consent_given ricevuto');
-<?php endif; ?>
-    if (hasMarketingConsent()) {
-      window.marketingConsent = true;
-      window.fstPersistUid && window.fstPersistUid();
-      loadFacebookPixelDynamically();
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-      logConsentSnapshot('event-iubenda_consent_given');
-<?php endif; ?>
-    }
-  });
+  // Complianz e iubenda pubblicano gli eventi d'integrazione GTM nel dataLayer,
+  // non come CustomEvent DOM. Intercetta sia accettazione sia rifiuto/preferenze.
+  window.dataLayer = window.dataLayer || [];
+  (function(dataLayer){
+    const originalPush = dataLayer.push;
+    dataLayer.push = function(){
+      const result = originalPush.apply(dataLayer, arguments);
+      Array.prototype.forEach.call(arguments, function(item){
+        const eventName = item && item.event;
+        if (typeof eventName !== 'string') return;
+        if (/^iubenda_(?:consent_|preference_)/.test(eventName) || eventName === 'cmplz_event_marketing') {
+          syncConsentAfterCmpUpdate('dataLayer-' + eventName);
+        }
+      });
+      return result;
+    };
+  })(window.dataLayer);
 
   // Cookiebot
   window.addEventListener('CookiebotOnAccept', function() {
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST CONSENT] ✅ Evento CookiebotOnAccept ricevuto');
 <?php endif; ?>
-    if (hasMarketingConsent()) {
-      window.marketingConsent = true;
-      window.fstPersistUid && window.fstPersistUid();
-      loadFacebookPixelDynamically();
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-      logConsentSnapshot('event-CookiebotOnAccept');
-<?php endif; ?>
-    }
+    syncConsentAfterCmpUpdate('CookiebotOnAccept');
+  });
+
+  window.addEventListener('CookiebotOnDecline', function() {
+    syncConsentAfterCmpUpdate('CookiebotOnDecline');
   });
 
   // OneTrust
-  document.addEventListener('OneTrustGroupsUpdated', function() {
+  window.addEventListener('OneTrustGroupsUpdated', function() {
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST CONSENT] 🔄 Evento OneTrustGroupsUpdated ricevuto');
 <?php endif; ?>
-    if (hasMarketingConsent()) {
-      window.marketingConsent = true;
-      window.fstPersistUid && window.fstPersistUid();
-      loadFacebookPixelDynamically();
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-      logConsentSnapshot('event-OneTrustGroupsUpdated-accept');
-<?php endif; ?>
-    } else {
-      window.marketingConsent = false;
-      removeFacebookPixel();
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-      logConsentSnapshot('event-OneTrustGroupsUpdated-revoke');
-<?php endif; ?>
-    }
+    syncConsentAfterCmpUpdate('OneTrustGroupsUpdated');
   });
 
   // Evento custom configurato nelle impostazioni
@@ -1285,12 +1285,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST CONSENT] ✅ Evento custom <?php echo esc_js( $custom_event ); ?> ricevuto');
 <?php endif; ?>
-    window.marketingConsent = true;
-    window.fstPersistUid && window.fstPersistUid();
-    loadFacebookPixelDynamically();
-<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    logConsentSnapshot('event-custom-consent');
-<?php endif; ?>
+    syncConsentAfterCmpUpdate('custom-<?php echo esc_js( $custom_event ); ?>');
   });
   <?php endif; ?>
 
