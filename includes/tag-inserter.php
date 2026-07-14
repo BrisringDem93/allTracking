@@ -690,6 +690,15 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // ========================================
   // INVIO EVENTI (SERVER + FACEBOOK SE CONSENTITO)
   // ========================================
+
+  // Lista degli eventi standard Facebook Pixel (usano fbq('track', ...)).
+  // Tutti gli altri eventi personalizzati usano fbq('trackCustom', ...).
+  const FB_STANDARD_EVENTS = [
+    'PageView','AddPaymentInfo','AddToCart','AddToWishlist','CompleteRegistration',
+    'Contact','CustomizeProduct','Donate','FindLocation','InitiateCheckout','Lead',
+    'Purchase','Schedule','Search','StartTrial','SubmitApplication','Subscribe','ViewContent'
+  ];
+
   function sendEvent(payload) {
     payload.eventID = getEventId();
     
@@ -731,12 +740,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       
       // Facebook Pixel distingue eventi standard (track) da eventi personalizzati (trackCustom).
       // Lead, PageView, ViewContent ecc. sono standard; tutti gli altri usano trackCustom.
-      const fbStandardEvents = [
-        'PageView','AddPaymentInfo','AddToCart','AddToWishlist','CompleteRegistration',
-        'Contact','CustomizeProduct','Donate','FindLocation','InitiateCheckout','Lead',
-        'Purchase','Schedule','Search','StartTrial','SubmitApplication','Subscribe','ViewContent'
-      ];
-      const fbMethod = fbStandardEvents.indexOf(fbEventName) !== -1 ? 'track' : 'trackCustom';
+      const fbMethod = FB_STANDARD_EVENTS.indexOf(fbEventName) !== -1 ? 'track' : 'trackCustom';
 
       // ========================================
       // DEBUG DETTAGLIATO FACEBOOK PIXEL
@@ -955,7 +959,6 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   //               E l'utente ha iniziato a compilare un form (FormStart).
 
   window.fstFormStarted  = window.fstFormStarted  || false;
-  window.fstDeepInterest = window.fstDeepInterest || false;
 
   var _fstScrollPct60  = false;
   var _fstTime90s      = false;

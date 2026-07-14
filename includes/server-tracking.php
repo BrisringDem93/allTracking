@@ -299,6 +299,9 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
         ];
         $ga4_event_name = isset( $ga4_name_map[ $type ] )
             ? $ga4_name_map[ $type ]
+            // Fallback: converte camelCase in snake_case per tipi non mappati.
+            // Nota: il pattern non gestisce acronyms (es. "HTTPError" → "h_t_t_p_error"),
+            // ma tutti i tipi previsti (ButtonClick, ecc.) producono risultati corretti.
             : strtolower( preg_replace( '/([A-Z])/', '_$1', lcfirst( $type ) ) );
         fst_send_to_ga4( $ga4_event_name, [ 'label' => $label ] );
     }
@@ -580,8 +583,15 @@ function fst_send_to_ga4( string $eventName, array $params = [] ) {
     
     // STEP 3: Costruisce payload nel formato GA4
     $client_id = fst_get_uid();
-    // GA4 richiede un client_id non vuoto; se non c'è consenso (fst_uid assente),
-    // usa un UUID casuale per questa richiesta così l'evento non viene scartato.
+    // GA4 richiede un client_id non vuoto.
+    // Fallback 1: cookie _ga (formato GA1.x.XXXXXXXXXX.XXXXXXXXXX) — preserva la sessione GA4.
+    // Fallback 2: UUID casuale di richiesta (limita cross-session attribution, usato solo come sicurezza).
+    if ( empty( $client_id ) && isset( $_COOKIE['_ga'] ) ) {
+        $ga_parts = explode( '.', $_COOKIE['_ga'] );
+        if ( count( $ga_parts ) >= 4 ) {
+            $client_id = $ga_parts[2] . '.' . $ga_parts[3];
+        }
+    }
     if ( empty( $client_id ) ) {
         $client_id = wp_generate_uuid4();
     }
