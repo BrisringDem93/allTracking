@@ -299,9 +299,10 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
         ];
         $ga4_event_name = isset( $ga4_name_map[ $type ] )
             ? $ga4_name_map[ $type ]
-            // Fallback: converte camelCase in snake_case per tipi non mappati.
-            // Nota: il pattern non gestisce acronyms (es. "HTTPError" → "h_t_t_p_error"),
-            // ma tutti i tipi previsti (ButtonClick, ecc.) producono risultati corretti.
+            // Fallback camelCase → snake_case: lcfirst() abbassa il primo carattere (evita underscore
+            // iniziale), poi il regex aggiunge '_' davanti ad ogni lettera maiuscola rimanente.
+            // Nota: non gestisce acronyms consecutivi (es. "HTTPError" → "h_t_t_p_error");
+            // tutti i tipi previsti (ButtonClick ecc.) producono risultati corretti.
             : strtolower( preg_replace( '/([A-Z])/', '_$1', lcfirst( $type ) ) );
         fst_send_to_ga4( $ga4_event_name, [ 'label' => $label ] );
     }
@@ -589,7 +590,12 @@ function fst_send_to_ga4( string $eventName, array $params = [] ) {
     if ( empty( $client_id ) && isset( $_COOKIE['_ga'] ) ) {
         $ga_parts = explode( '.', $_COOKIE['_ga'] );
         if ( count( $ga_parts ) >= 4 ) {
-            $client_id = $ga_parts[2] . '.' . $ga_parts[3];
+            // Sanitizza: il client_id GA4 contiene solo cifre e un punto separatore.
+            $part2 = preg_replace( '/[^0-9]/', '', $ga_parts[2] );
+            $part3 = preg_replace( '/[^0-9]/', '', $ga_parts[3] );
+            if ( $part2 !== '' && $part3 !== '' ) {
+                $client_id = $part2 . '.' . $part3;
+            }
         }
     }
     if ( empty( $client_id ) ) {

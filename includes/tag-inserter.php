@@ -1004,16 +1004,24 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     tryDeepInterest();
   }, 90000);
 
-  // Scroll depth: rilevamento scroll >= 60%
+  // Scroll depth: rilevamento scroll >= 60%.
+  // Pagine brevi (docHeight <= 0): l'intera pagina è visibile senza scorrere,
+  // quindi il 60% è già raggiunto; si segna subito così deepInterest dipende solo dal timer.
   (function() {
+    var docHeight = document.documentElement.scrollHeight - window.innerHeight;
+    if (docHeight <= 0) {
+      _fstScrollPct60 = true;
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.log('[FST] 📜 Pagina corta: scroll 60% considerato raggiunto');
+<?php endif; ?>
+      return; // tryDeepInterest verrà chiamata dal setTimeout
+    }
     function onScroll() {
       if (_fstScrollPct60) {
         window.removeEventListener('scroll', onScroll);
         return;
       }
       var scrolled = window.scrollY || window.pageYOffset;
-      var docHeight = document.documentElement.scrollHeight - window.innerHeight;
-      if (docHeight <= 0) return;
       if ((scrolled / docHeight) * 100 >= 60) {
         _fstScrollPct60 = true;
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
