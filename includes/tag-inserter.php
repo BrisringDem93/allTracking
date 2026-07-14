@@ -729,12 +729,21 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
         fbEventName = 'Lead';
       }
       
+      // Facebook Pixel distingue eventi standard (track) da eventi personalizzati (trackCustom).
+      // Lead, PageView, ViewContent ecc. sono standard; tutti gli altri usano trackCustom.
+      const fbStandardEvents = [
+        'PageView','AddPaymentInfo','AddToCart','AddToWishlist','CompleteRegistration',
+        'Contact','CustomizeProduct','Donate','FindLocation','InitiateCheckout','Lead',
+        'Purchase','Schedule','Search','StartTrial','SubmitApplication','Subscribe','ViewContent'
+      ];
+      const fbMethod = fbStandardEvents.indexOf(fbEventName) !== -1 ? 'track' : 'trackCustom';
+
       // ========================================
       // DEBUG DETTAGLIATO FACEBOOK PIXEL
       // ========================================
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.group('[FST DEBUG] 📘 Facebook Pixel Event Details');
-      console.log('🎯 Event Name:', fbEventName);
+      console.log('🎯 Event Name:', fbEventName, '| Metodo:', fbMethod);
       console.log('🆔 Event ID:', payload.eventID);
       console.log('👤 External ID:', externalId);
       console.log('📊 Parameters:', fbParams);
@@ -745,7 +754,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php endif; ?>
       
       // Invia a Facebook Pixel con eventID per deduplica server/client
-      fbq('track', fbEventName, fbParams, {eventID: payload.eventID});
+      fbq(fbMethod, fbEventName, fbParams, {eventID: payload.eventID});
       
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST] 📘 Facebook Pixel event:', fbEventName, 'ID:', payload.eventID, 'External ID:', externalId);
@@ -910,6 +919,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     const form = e.target.closest('form');
     if (!form || form.fstStarted) return;
     form.fstStarted = true;
+    window.fstFormStarted = true; // Segnale per deepPlus
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] FormStart', form);
 <?php endif; ?>
@@ -919,6 +929,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       page: window.location.href,
       customData: { form_name: form.id || 'unnamed' }
     });
+    tryDeepPlus(); // Verifica se deepPlus può scattare ora
   });
 
   /* FORM SUBMIT */
@@ -935,6 +946,83 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     });
   });
   
+  // ========================================
+  // SCROLL DEPTH + TEMPO DI VISUALIZZAZIONE
+  // ========================================
+  // deepInterest: scatta quando l'utente ha scorso >= 60% della pagina
+  //               E ha trascorso almeno 90 secondi sulla stessa pagina.
+  // deepPlus:     scatta quando deepInterest è già avvenuto
+  //               E l'utente ha iniziato a compilare un form (FormStart).
+
+  window.fstFormStarted  = window.fstFormStarted  || false;
+  window.fstDeepInterest = window.fstDeepInterest || false;
+
+  var _fstScrollPct60  = false;
+  var _fstTime90s      = false;
+  var _fstDeepInterest = false;
+  var _fstDeepPlus     = false;
+
+  function tryDeepInterest() {
+    if (_fstDeepInterest || !_fstScrollPct60 || !_fstTime90s) return;
+    _fstDeepInterest = true;
+    window.fstDeepInterest = true;
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST] 🎯 deepInterest: scroll 60% + 90 secondi raggiunti');
+<?php endif; ?>
+    sendEvent({
+      type: 'deepInterest',
+      label: 'scroll60_time90s',
+      page: window.location.href,
+      customData: { scroll_pct: 60, time_on_page_sec: 90 }
+    });
+    tryDeepPlus();
+  }
+
+  function tryDeepPlus() {
+    if (_fstDeepPlus || !_fstDeepInterest || !window.fstFormStarted) return;
+    _fstDeepPlus = true;
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST] 🎯 deepPlus: deepInterest + formStart entrambi raggiunti');
+<?php endif; ?>
+    sendEvent({
+      type: 'deepPlus',
+      label: 'deepInterest_formStart',
+      page: window.location.href,
+      customData: { scroll_pct: 60, time_on_page_sec: 90 }
+    });
+  }
+
+  // Timer: 90 secondi sulla pagina
+  setTimeout(function() {
+    _fstTime90s = true;
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    console.log('[FST] ⏱️ 90 secondi trascorsi sulla pagina');
+<?php endif; ?>
+    tryDeepInterest();
+  }, 90000);
+
+  // Scroll depth: rilevamento scroll >= 60%
+  (function() {
+    function onScroll() {
+      if (_fstScrollPct60) {
+        window.removeEventListener('scroll', onScroll);
+        return;
+      }
+      var scrolled = window.scrollY || window.pageYOffset;
+      var docHeight = document.documentElement.scrollHeight - window.innerHeight;
+      if (docHeight <= 0) return;
+      if ((scrolled / docHeight) * 100 >= 60) {
+        _fstScrollPct60 = true;
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+        console.log('[FST] 📜 Scroll 60% raggiunto');
+<?php endif; ?>
+        window.removeEventListener('scroll', onScroll);
+        tryDeepInterest();
+      }
+    }
+    window.addEventListener('scroll', onScroll, { passive: true });
+  })();
+
   // ========================================
   // INIZIALIZZAZIONE LISTENER CONSENSO
   // ========================================

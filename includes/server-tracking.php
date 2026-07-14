@@ -289,7 +289,18 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
     
     // STEP 7: Invia anche a GA4 server-side (se abilitato)
     if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
-        fst_send_to_ga4( strtolower( $type ), [ 'label' => $label ] );
+        // Mappa i nomi degli eventi ai nomi ufficiali GA4 (Measurement Protocol)
+        $ga4_name_map = [
+            'Lead'         => 'generate_lead',   // Evento raccomandato GA4 per form lead
+            'FormSubmit'   => 'generate_lead',
+            'FormStart'    => 'form_start',       // Evento raccomandato GA4 per inizio form
+            'deepInterest' => 'deep_interest',    // Evento personalizzato
+            'deepPlus'     => 'deep_plus',        // Evento personalizzato
+        ];
+        $ga4_event_name = isset( $ga4_name_map[ $type ] )
+            ? $ga4_name_map[ $type ]
+            : strtolower( preg_replace( '/([A-Z])/', '_$1', lcfirst( $type ) ) );
+        fst_send_to_ga4( $ga4_event_name, [ 'label' => $label ] );
     }
 
     // STEP 8: Restituisce risposta JSON di successo
@@ -568,8 +579,14 @@ function fst_send_to_ga4( string $eventName, array $params = [] ) {
                 rawurlencode( $measurement_id ) . '&api_secret=' . rawurlencode( $api_secret );
     
     // STEP 3: Costruisce payload nel formato GA4
+    $client_id = fst_get_uid();
+    // GA4 richiede un client_id non vuoto; se non c'è consenso (fst_uid assente),
+    // usa un UUID casuale per questa richiesta così l'evento non viene scartato.
+    if ( empty( $client_id ) ) {
+        $client_id = wp_generate_uuid4();
+    }
     $body = [
-        'client_id' => fst_get_uid(),                           // Stesso ID utente di Facebook
+        'client_id' => $client_id,                              // Stesso ID utente di Facebook (o fallback)
         'events'    => [ [ 'name' => $eventName, 'params' => $params ] ], // Array eventi
     ];
     
