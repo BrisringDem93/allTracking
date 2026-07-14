@@ -546,14 +546,12 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // ========================================
   
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-  // Blocco di debug per il cookie Complianz (visibile solo con WP_DEBUG attivo)
-  console.log('[FST DEBUG] Controllo cookie Complianz...');
-  const complianzCookie = document.cookie.split('; ').find(row => row.startsWith(window.consentCookieName + '='));
-  if (complianzCookie) {
-    console.log('[FST DEBUG] Cookie ' + window.consentCookieName + ' trovato:', complianzCookie);
-    console.log('[FST DEBUG] Valore del cookie:', complianzCookie.split('=')[1]);
+  if (window.consentCookieName) {
+    console.log('[FST DEBUG] Controllo cookie custom:', window.consentCookieName);
+    const customConsentCookie = document.cookie.split('; ').find(row => row.startsWith(window.consentCookieName + '='));
+    console.log('[FST DEBUG] Cookie custom:', customConsentCookie || 'non trovato');
   } else {
-    console.log('[FST DEBUG] Cookie ' + window.consentCookieName + ' non trovato.');
+    console.log('[FST DEBUG] Cookie custom non configurato: verrà usato il rilevamento automatico CMP');
   }
 <?php endif; ?>
 
@@ -1059,8 +1057,111 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   const consentCookie = window.consentCookieName || '';
 
   function getCookieValue(name){
+    if (!name) return null;
     const m = document.cookie.match(new RegExp('(?:^|; )' + name + '=([^;]+)'));
     return m ? decodeURIComponent(m[1]) : null;
+  }
+
+  function findCookieName(pattern){
+    const row = document.cookie.split('; ').find(function(cookie){
+      return pattern.test(cookie.split('=')[0]);
+    });
+    return row ? row.split('=')[0] : null;
+  }
+
+  function identifyCMPs(){
+    const scripts = Array.prototype.map.call(document.scripts, function(script){
+      return script.src || '';
+    });
+    const detected = [];
+
+    function add(name, evidence){
+      if (!detected.some(function(item){ return item.name === name; })) {
+        detected.push({ name: name, evidence: evidence });
+      }
+    }
+
+    const iubendaCookie = findCookieName(/^_iub_cs-\d+$/);
+    if (window._iub || iubendaCookie || scripts.some(function(src){ return /iubenda\.com/i.test(src); })) {
+      add('iubenda', {
+        global: !!window._iub,
+        apiReady: !!(window._iub && window._iub.cs && window._iub.cs.api),
+        cookie: iubendaCookie,
+        script: scripts.find(function(src){ return /iubenda\.com/i.test(src); }) || null
+      });
+    }
+
+    if (typeof window.cmplz_has_consent === 'function' || getCookieValue('cmplz_marketing') !== null || scripts.some(function(src){ return /complianz/i.test(src); })) {
+      add('complianz', {
+        apiReady: typeof window.cmplz_has_consent === 'function',
+        cookie: getCookieValue('cmplz_marketing') !== null ? 'cmplz_marketing' : null
+      });
+    }
+
+    if (window.Cookiebot || getCookieValue('CookieConsent') !== null || scripts.some(function(src){ return /cookiebot|consent\.cookiebot/i.test(src); })) {
+      add('cookiebot', {
+        apiReady: !!window.Cookiebot,
+        cookie: getCookieValue('CookieConsent') !== null ? 'CookieConsent' : null
+      });
+    }
+
+    if (window.OneTrust || typeof window.OnetrustActiveGroups === 'string' || getCookieValue('OptanonConsent') !== null || scripts.some(function(src){ return /onetrust|cookielaw/i.test(src); })) {
+      add('onetrust', {
+        apiReady: !!window.OneTrust,
+        activeGroups: window.OnetrustActiveGroups || null,
+        cookie: getCookieValue('OptanonConsent') !== null ? 'OptanonConsent' : null
+      });
+    }
+
+    if (consentCookie && getCookieValue(consentCookie) !== null) {
+      add('custom', { cookie: consentCookie });
+    }
+
+    window.fstDetectedCMPs = detected;
+    return detected;
+  }
+
+  function readIubendaPreferences(){
+    try {
+      if (window._iub && window._iub.cs && window._iub.cs.api && typeof window._iub.cs.api.getPreferences === 'function') {
+        return window._iub.cs.api.getPreferences();
+      }
+    } catch(e) {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.warn('[FST CMP] iubenda getPreferences() ha generato un errore:', e);
+<?php endif; ?>
+    }
+    return null;
+  }
+
+  function iubendaMarketingConsent(preferences){
+    if (!preferences || typeof preferences !== 'object') return null;
+    const purposes = preferences.purposes && typeof preferences.purposes === 'object'
+      ? preferences.purposes
+      : preferences;
+    if (purposes[5] === true || purposes['5'] === true || purposes.adv === true) return true;
+    if (preferences.consent === true && !preferences.purposes) return true;
+    if (preferences.consent === false) return false;
+    if (preferences.purposes && Object.prototype.hasOwnProperty.call(purposes, '5')) return false;
+    return null;
+  }
+
+  function logCMPDetection(context){
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+    const cmps = identifyCMPs();
+    const iubendaPreferences = readIubendaPreferences();
+    console.group('[FST CMP] Identificazione CMP [' + context + ']');
+    console.log('CMP rilevati:', cmps.length ? cmps : 'nessuno');
+    console.log('Cookie visibili:', document.cookie ? document.cookie.split('; ').map(function(row){ return row.split('=')[0]; }) : []);
+    if (cmps.some(function(cmp){ return cmp.name === 'iubenda'; })) {
+      console.log('iubenda preferences:', iubendaPreferences);
+      console.log('iubenda marketing calcolato:', iubendaMarketingConsent(iubendaPreferences));
+    }
+    console.log('Consenso marketing finale:', hasMarketingConsent());
+    console.groupEnd();
+<?php else : ?>
+    identifyCMPs();
+<?php endif; ?>
   }
 
   function logConsentSnapshot(context){
@@ -1091,15 +1192,24 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     var cm = document.cookie.match(/(?:^|; )cmplz_marketing=([^;]+)/);
     if (cm && decodeURIComponent(cm[1]) === 'allow') return true;
 
+    // Preferisce le API ufficiali quando il CMP è disponibile nel browser.
+    if (typeof window.cmplz_has_consent === 'function') {
+      try { if (window.cmplz_has_consent('marketing')) return true; } catch(e) {}
+    }
+
     // 3. iubenda: consenso globale oppure purpose 5 (Marketing)
+    var iubendaApiConsent = iubendaMarketingConsent(readIubendaPreferences());
+    if (iubendaApiConsent !== null) return iubendaApiConsent;
     var iub = document.cookie.match(/(?:^|; )_iub_cs-\d+=([^;]+)/);
-    if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && (d.consent === true || (d.purposes && d.purposes[5] === true))) return true; } catch(e) {} }
+    if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); var iubCookieConsent = iubendaMarketingConsent(d); if (iubCookieConsent !== null) return iubCookieConsent; } catch(e) {} }
 
     // 4. Cookiebot: CookieConsent con marketing:true
+    if (window.Cookiebot && window.Cookiebot.consent && window.Cookiebot.consent.marketing === true) return true;
     var cb = document.cookie.match(/(?:^|; )CookieConsent=([^;]+)/);
     if (cb) { try { if (decodeURIComponent(cb[1]).indexOf('marketing:true') !== -1) return true; } catch(e) {} }
 
     // 5. OneTrust: OptanonConsent con groups C0004:1 (C0004 = Targeting/Pubblicità, :1 = consenso accordato)
+    if (typeof window.OnetrustActiveGroups === 'string' && /(?:^|,)C0004(?:,|$)/.test(window.OnetrustActiveGroups)) return true;
     var ot = document.cookie.match(/(?:^|; )OptanonConsent=([^;]+)/);
     if (ot) { try { var g = new URLSearchParams(decodeURIComponent(ot[1])).get('groups') || ''; if (g.indexOf('C0004:1') !== -1) return true; } catch(e) {} }
 
@@ -1258,6 +1368,26 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     };
   })(window.dataLayer);
 
+  // Complianz espone anche questo hook DOM ufficiale quando abilita una categoria.
+  document.addEventListener('cmplz_enable_category', function(event) {
+    const category = event && event.detail ? event.detail.category : null;
+    if (!category || category === 'marketing') {
+      syncConsentAfterCmpUpdate('cmplz_enable_category');
+    }
+  });
+
+  // Compatibilità con il bridge iubenda incluso nel progetto. Lo stato non viene
+  // preso da event.detail: viene sempre riletto tramite API/cookie iubenda.
+  document.addEventListener('fstMarketingConsentAccepted', function() {
+    syncConsentAfterCmpUpdate('iubenda-bridge-accepted');
+  });
+  document.addEventListener('fstMarketingConsentRevoked', function() {
+    syncConsentAfterCmpUpdate('iubenda-bridge-revoked');
+  });
+  document.addEventListener('fstIubendaPreferencesChanged', function() {
+    syncConsentAfterCmpUpdate('iubenda-bridge-preferences-changed');
+  });
+
   // Cookiebot
   window.addEventListener('CookiebotOnAccept', function() {
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
@@ -1293,6 +1423,21 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
   logConsentSnapshot('initial-marketing-consent');
 <?php endif; ?>
+
+  logCMPDetection('iniziale');
+  // Alcuni CMP sono asincroni. Ripete solo l'identificazione durante l'avvio,
+  // mentre il controllo del consenso continua nel polling ordinario.
+  let cmpDetectionAttempts = 0;
+  const cmpDetectionTimer = window.setInterval(function(){
+    cmpDetectionAttempts++;
+    const previous = JSON.stringify(window.fstDetectedCMPs || []);
+    const detected = identifyCMPs();
+    if (JSON.stringify(detected) !== previous) logCMPDetection('asincrona-' + cmpDetectionAttempts);
+    const allDetectedReady = detected.length > 0 && detected.every(function(cmp){
+      return cmp.name === 'custom' || cmp.evidence.apiReady || cmp.evidence.cookie;
+    });
+    if (allDetectedReady || cmpDetectionAttempts >= 10) window.clearInterval(cmpDetectionTimer);
+  }, 1000);
   
   // TRIGGER 1 DISABILITATO: Non caricare automaticamente Facebook Pixel al caricamento pagina
   // Il pixel verrà caricato solo tramite eventi di cambio consenso o eventi Complianz

@@ -30,6 +30,14 @@ l'accettazione sia la revoca:
 - Cookiebot: `CookiebotOnAccept` e `CookiebotOnDecline` su `window`;
 - OneTrust: `OneTrustGroupsUpdated` su `window`.
 
+All'avvio `identifyCMPs()` identifica i CMP tramite oggetti JavaScript, cookie e
+script caricati. Per iubenda il controllo del consenso preferisce
+`_iub.cs.api.getPreferences()` e usa `_iub_cs-*` come fallback. Per Complianz,
+Cookiebot e OneTrust vengono usate, quando disponibili, anche le rispettive API
+client-side. Con `WP_DEBUG` attivo, la console mostra i CMP rilevati, le prove
+usate per identificarli, i nomi dei cookie visibili, le preferenze iubenda e il
+risultato finale del controllo marketing.
+
 Se **Nome cookie consenso** è vuoto, il plugin usa il rilevamento automatico dei
 formati più diffusi già supportati: `cmplz_marketing` di Complianz, `_iub_cs-*`
 di iubenda, `CookieConsent` di Cookiebot e `OptanonConsent` di OneTrust. Il campo
