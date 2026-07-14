@@ -437,8 +437,10 @@ function fst_get_uid() {
         return sanitize_text_field( $_COOKIE[ $cookie ] );
     }
     
-    // Senza consenso marketing non creiamo né persistiamo alcun identificatore (GDPR)
-    if ( ! function_exists( 'ati_has_marketing_consent' ) || ! ati_has_marketing_consent() ) {
+    // Senza consenso marketing non creiamo né persistiamo alcun identificatore (GDPR).
+    // tag-inserter.php è caricato prima di server-tracking.php in plugin.php,
+    // quindi ati_has_marketing_consent() è sempre disponibile.
+    if ( ! ati_has_marketing_consent() ) {
         return '';
     }
 

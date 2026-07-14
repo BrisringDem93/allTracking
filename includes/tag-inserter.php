@@ -16,6 +16,12 @@ if ( ! defined( 'ABSPATH' ) ) {
  * @return bool True se il consenso è stato dato, False altrimenti
  */
 function ati_has_marketing_consent() {
+    // Cache il risultato per l'intera durata della richiesta (evita iterazioni ripetute su $_COOKIE)
+    static $cached = null;
+    if ( null !== $cached ) {
+        return $cached;
+    }
+
     // DEBUG: Log controllo consenso
     if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
         error_log( '[ATI DEBUG] === CONTROLLO CONSENSO MARKETING ===' );
@@ -32,7 +38,7 @@ function ati_has_marketing_consent() {
             error_log( '[ATI DEBUG] Consenso valido: ' . ( $consent_value === 'allow' ? 'SI' : 'NO' ) );
         }
         if ( $consent_value === 'allow' ) {
-            return true;
+            return $cached = true;
         }
     }
 
@@ -41,7 +47,7 @@ function ati_has_marketing_consent() {
         if ( preg_match( '/^_iub_cs-\d+$/', $name ) ) {
             $data = json_decode( urldecode( $value ), true );
             if ( is_array( $data ) && isset( $data['purposes'][2] ) && $data['purposes'][2] ) {
-                return true;
+                return $cached = true;
             }
         }
     }
@@ -49,7 +55,7 @@ function ati_has_marketing_consent() {
     // 3. Cookiebot: CookieConsent con marketing:true
     if ( isset( $_COOKIE['CookieConsent'] ) ) {
         if ( strpos( urldecode( $_COOKIE['CookieConsent'] ), 'marketing:true' ) !== false ) {
-            return true;
+            return $cached = true;
         }
     }
 
@@ -58,7 +64,7 @@ function ati_has_marketing_consent() {
     if ( isset( $_COOKIE['OptanonConsent'] ) ) {
         if ( preg_match( '/(?:^|&)groups=([^&]*)/', urldecode( $_COOKIE['OptanonConsent'] ), $ot_match ) ) {
             if ( strpos( $ot_match[1], 'C0004:1' ) !== false ) {
-                return true;
+                return $cached = true;
             }
         }
     }
@@ -67,7 +73,7 @@ function ati_has_marketing_consent() {
         error_log( '[ATI DEBUG] Nessun consenso marketing trovato' );
     }
     // Se il cookie non esiste, assumiamo nessun consenso per sicurezza GDPR
-    return false;
+    return $cached = false;
 }
 
 /**
