@@ -21,6 +21,7 @@ function ati_register_settings() {
     register_setting( 'ati_settings', 'ati_enable_gtm', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_disable_logged_in', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_consent_cookie_name', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => 'cmplz_marketing' ) );
+    register_setting( 'ati_settings', 'ati_consent_custom_event', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ) );
     register_setting( 'ati_settings', 'ati_server_endpoint', array( 'sanitize_callback' => 'esc_url_raw' ) );
     register_setting( 'ati_settings', 'ati_server_auth_key', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_server_auth_value', array( 'sanitize_callback' => 'sanitize_text_field' ) );
@@ -90,7 +91,14 @@ function ati_settings_page() {
                     <th scope="row"><label for="ati_consent_cookie_name">Nome cookie consenso</label></th>
                     <td>
                         <input name="ati_consent_cookie_name" type="text" id="ati_consent_cookie_name" value="<?php echo esc_attr( get_option( 'ati_consent_cookie_name', 'cmplz_marketing' ) ); ?>" class="regular-text" />
-                        <p class="description">Cookie utilizzato per verificare il consenso marketing</p>
+                        <p class="description">Cookie utilizzato per verificare il consenso marketing. Rilevamento automatico per Complianz, iubenda, Cookiebot e OneTrust.</p>
+                    </td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="ati_consent_custom_event">Evento JS consenso custom</label></th>
+                    <td>
+                        <input name="ati_consent_custom_event" type="text" id="ati_consent_custom_event" value="<?php echo esc_attr( get_option( 'ati_consent_custom_event', '' ) ); ?>" class="regular-text" placeholder="es: myConsentAccepted" />
+                        <p class="description">Evento JavaScript personalizzato che indica il consenso marketing. Lascia vuoto per usare solo il rilevamento automatico dei banner.</p>
                     </td>
                 </tr>
             </table>

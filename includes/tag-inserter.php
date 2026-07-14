@@ -488,7 +488,25 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   }
 <?php endif; ?>
 
-  window.marketingConsent = document.cookie.match(new RegExp('(?:^|; )' + window.consentCookieName + '=([^;]+)'))?.[1] === 'allow';
+  window.marketingConsent = (function() {
+    // 1. Cookie configurato nelle impostazioni (default Complianz: cmplz_marketing=allow)
+    var cm = document.cookie.match(new RegExp('(?:^|; )' + window.consentCookieName + '=([^;]+)'));
+    if (cm && cm[1] === 'allow') return true;
+
+    // 2. iubenda: _iub_cs-XXXXX con purposes[2] = true (marketing)
+    var iub = document.cookie.match(/(?:^|; )_iub_cs-\d+=([^;]+)/);
+    if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && d.purposes && d.purposes[2]) return true; } catch(e) {} }
+
+    // 3. Cookiebot: CookieConsent con marketing:true
+    var cb = document.cookie.match(/(?:^|; )CookieConsent=([^;]+)/);
+    if (cb) { try { if (decodeURIComponent(cb[1]).indexOf('marketing:true') !== -1) return true; } catch(e) {} }
+
+    // 4. OneTrust: OptanonConsent con groups C0004:1 (targeting/advertising)
+    var ot = document.cookie.match(/(?:^|; )OptanonConsent=([^;]+)/);
+    if (ot) { try { var g = new URLSearchParams(decodeURIComponent(ot[1])).get('groups') || ''; if (g.indexOf('C0004:1') !== -1) return true; } catch(e) {} }
+
+    return false;
+  })();
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
   console.log('[FST] Consenso marketing:', window.marketingConsent ? '✅ Consentito' : '❌ Non consentito');
 <?php endif; ?>
@@ -509,25 +527,34 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     document.cookie = 'fst_ev_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
   }
   
-  // Genera o recupera external_id persistente (come lato server)
+  // Genera o recupera external_id persistente (come lato server).
+  // Il cookie fst_uid viene scritto SOLO dopo che l'utente ha espresso consenso marketing.
+  // Prima del consenso viene mantenuto un UUID temporaneo in memoria (window._fstTempUid).
   function getExternalId() {
     const cookieName = 'fst_uid';
     const match = document.cookie.match(new RegExp('(?:^|; )' + cookieName + '=([^;]+)'));
     if (match) return decodeURIComponent(match[1]);
-    
-    // Se non esiste, genera UUID4 simile al server PHP
-    const uuid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-      const r = Math.random() * 16 | 0;
-      const v = c == 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
-    
-    // Salva cookie per 2 anni (come lato server)
-    const expires = new Date(Date.now() + 63072000 * 1000).toUTCString();
-    document.cookie = cookieName + '=' + encodeURIComponent(uuid) + '; expires=' + expires + '; path=/; SameSite=Lax';
-    
-    return uuid;
+
+    // Usa o crea UUID temporaneo (non ancora persistito nel cookie)
+    if (!window._fstTempUid) {
+      window._fstTempUid = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0;
+        const v = c == 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
+    }
+
+    // Persiste il cookie solo dopo il consenso marketing
+    if (window.marketingConsent) {
+      const expires = new Date(Date.now() + 63072000 * 1000).toUTCString();
+      document.cookie = cookieName + '=' + encodeURIComponent(window._fstTempUid) + '; expires=' + expires + '; path=/; SameSite=Lax';
+    }
+
+    return window._fstTempUid;
   }
+
+  // Esposto globalmente: permette agli handler di consenso (script 2) di persistere fst_uid
+  window.fstPersistUid = getExternalId;
   
   // ========================================
   // FUNZIONI HELPER PER FBCLID
@@ -824,8 +851,23 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   const consentCookie = window.consentCookieName || 'cmplz_marketing';
 
   function hasMarketingConsent(){
-    const match = document.cookie.match(new RegExp('(?:^|; )' + consentCookie + '=([^;]+)'));
-    return match && match[1] === 'allow';
+    // 1. Cookie configurato nelle impostazioni (default Complianz: cmplz_marketing=allow)
+    var match = document.cookie.match(new RegExp('(?:^|; )' + consentCookie + '=([^;]+)'));
+    if (match && match[1] === 'allow') return true;
+
+    // 2. iubenda: _iub_cs-XXXXX con purposes[2] = true (marketing)
+    var iub = document.cookie.match(/(?:^|; )_iub_cs-\d+=([^;]+)/);
+    if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && d.purposes && d.purposes[2]) return true; } catch(e) {} }
+
+    // 3. Cookiebot: CookieConsent con marketing:true
+    var cb = document.cookie.match(/(?:^|; )CookieConsent=([^;]+)/);
+    if (cb) { try { if (decodeURIComponent(cb[1]).indexOf('marketing:true') !== -1) return true; } catch(e) {} }
+
+    // 4. OneTrust: OptanonConsent con groups C0004:1 (targeting/advertising)
+    var ot = document.cookie.match(/(?:^|; )OptanonConsent=([^;]+)/);
+    if (ot) { try { var g = new URLSearchParams(decodeURIComponent(ot[1])).get('groups') || ''; if (g.indexOf('C0004:1') !== -1) return true; } catch(e) {} }
+
+    return false;
   }
   window.hasMarketingConsent = hasMarketingConsent;
 
@@ -913,6 +955,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
         currentConsent = newConsent;
         window.marketingConsent = newConsent;
         if(newConsent){
+          window.fstPersistUid && window.fstPersistUid();
           loadFacebookPixelDynamically();
         }else{
           removeFacebookPixel();
@@ -921,8 +964,14 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     },500);
   }
 
+  // ========================================
+  // LISTENER CONSENSO MULTI-BANNER
+  // ========================================
+
+  // Complianz
   document.addEventListener('cmplz_marketing_accept', () => {
     window.marketingConsent = true;
+    window.fstPersistUid && window.fstPersistUid();
     loadFacebookPixelDynamically();
   });
 
@@ -930,6 +979,46 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     window.marketingConsent = false;
     removeFacebookPixel();
   });
+
+  // iubenda
+  document.addEventListener('iubenda_consent_given', function() {
+    if (hasMarketingConsent()) {
+      window.marketingConsent = true;
+      window.fstPersistUid && window.fstPersistUid();
+      loadFacebookPixelDynamically();
+    }
+  });
+
+  // Cookiebot
+  window.addEventListener('CookiebotOnAccept', function() {
+    if (hasMarketingConsent()) {
+      window.marketingConsent = true;
+      window.fstPersistUid && window.fstPersistUid();
+      loadFacebookPixelDynamically();
+    }
+  });
+
+  // OneTrust
+  document.addEventListener('OneTrustGroupsUpdated', function() {
+    if (hasMarketingConsent()) {
+      window.marketingConsent = true;
+      window.fstPersistUid && window.fstPersistUid();
+      loadFacebookPixelDynamically();
+    } else {
+      window.marketingConsent = false;
+      removeFacebookPixel();
+    }
+  });
+
+  // Evento custom configurato nelle impostazioni
+  <?php $custom_event = get_option( 'ati_consent_custom_event', '' ); ?>
+  <?php if ( ! empty( $custom_event ) ) : ?>
+  document.addEventListener('<?php echo esc_js( $custom_event ); ?>', function() {
+    window.marketingConsent = true;
+    window.fstPersistUid && window.fstPersistUid();
+    loadFacebookPixelDynamically();
+  });
+  <?php endif; ?>
 
   window.marketingConsent = hasMarketingConsent();
   
