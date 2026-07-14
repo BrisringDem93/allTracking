@@ -40,7 +40,7 @@ function ati_has_marketing_consent() {
     foreach ( $_COOKIE as $name => $value ) {
         if ( preg_match( '/^_iub_cs-\d+$/', $name ) ) {
             $data = json_decode( urldecode( $value ), true );
-            if ( isset( $data['purposes'][2] ) && $data['purposes'][2] ) {
+            if ( is_array( $data ) && isset( $data['purposes'][2] ) && $data['purposes'][2] ) {
                 return true;
             }
         }
@@ -54,11 +54,12 @@ function ati_has_marketing_consent() {
     }
 
     // 4. OneTrust: OptanonConsent con groups C0004:1 (C0004 = Targeting/Pubblicità, :1 = consenso accordato)
+    // Usa regex per estrarre il parametro 'groups' in modo sicuro, senza parse_str
     if ( isset( $_COOKIE['OptanonConsent'] ) ) {
-        parse_str( urldecode( $_COOKIE['OptanonConsent'] ), $ot_params );
-        $groups = isset( $ot_params['groups'] ) ? $ot_params['groups'] : '';
-        if ( strpos( $groups, 'C0004:1' ) !== false ) {
-            return true;
+        if ( preg_match( '/(?:^|&)groups=([^&]*)/', urldecode( $_COOKIE['OptanonConsent'] ), $ot_match ) ) {
+            if ( strpos( $ot_match[1], 'C0004:1' ) !== false ) {
+                return true;
+            }
         }
     }
 
