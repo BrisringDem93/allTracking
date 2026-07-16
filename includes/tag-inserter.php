@@ -739,7 +739,19 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       // Aggiunge external_id ai parametri per tracciabilità cross-platform
       const externalId = getExternalId();
       fbParams.external_id = externalId;
-      
+
+      // NUOVO: Se disponibili (form Lead), passa email/telefono per l'Advanced Matching.
+      // fbq hasha automaticamente questi valori lato client prima dell'invio a Facebook.
+      if (payload.email || payload.phone) {
+        const fbUserData = {};
+        if (payload.email) fbUserData.em = payload.email;
+        if (payload.phone) fbUserData.ph = payload.phone;
+        fbq('set', 'userData', fbUserData);
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+        console.log('[FST] 📘 Advanced Matching userData impostato:', fbUserData);
+<?php endif; ?>
+      }
+
       // Mappa i tipi di eventi per Facebook Pixel standard
       if (payload.type === 'ButtonClick') {
         // Per i click sui bottoni, usiamo evento personalizzato
@@ -949,17 +961,34 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   });
 
   /* FORM SUBMIT */
+  // Estrae email e telefono dal form inviato, per l'Advanced Matching lato Facebook
+  // e per l'hashing lato server (già gestito da fst_rest_event_handler per Lead/FormSubmit).
+  function getFormContact(form) {
+    const emailField = form.querySelector('input[type="email"], input[name*="email" i], input[id*="email" i]');
+    const phoneField = form.querySelector('input[type="tel"], input[name*="phone" i], input[name*="tel" i], input[id*="phone" i], input[id*="tel" i]');
+    const contact = {};
+    if (emailField && emailField.value.trim()) {
+      contact.email = emailField.value.trim().toLowerCase();
+    }
+    if (phoneField && phoneField.value.trim()) {
+      contact.phone = phoneField.value.replace(/\D+/g, '');
+    }
+    return contact;
+  }
+
   document.addEventListener('submit', e => {
     const form = e.target;
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] FormSubmit', form);
 <?php endif; ?>
-    sendEvent({
+    const leadPayload = {
       type: 'Lead',
       label: form.id || form.action || 'generic',
       page: window.location.href,
       customData: { form_name: form.id || 'unnamed' }
-    });
+    };
+    Object.assign(leadPayload, getFormContact(form));
+    sendEvent(leadPayload);
   });
   
   // ========================================
