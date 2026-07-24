@@ -23,6 +23,9 @@ require $base . 'class-ati-consent-service.php';
 require $base . 'class-ati-ga4-client-context.php';
 require $base . 'class-ati-event-normalizer.php';
 require $base . 'class-ati-ga4-adapter.php';
+require $base . 'class-ati-event-queue.php';
+require $base . 'class-ati-event-deduplicator.php';
+require $base . 'functions.php';
 require $base . 'class-ati-ga4-admin.php';
 
 $GLOBALS['__pass'] = 0;
@@ -192,6 +195,65 @@ ok( 'NUOVO' === ATI_GA4_Admin::sanitize_api_secret( 'NUOVO' ), 'Valore nuovo agg
 $_POST = array( 'ati_ga4_remove_secret' => '1' );
 ok( '' === ATI_GA4_Admin::sanitize_api_secret( '' ), 'Rimozione esplicita cancella il secret' );
 $_POST = array();
+
+// -------------------------------------------------------------------------
+section( 'Macchina a stati consegna: classify_delivery (Test 1,3,4,5,7 hardening)' );
+// client_id mancante -> discarded/missing_client_id, mai sent.
+$d = ATI_Event_Queue::classify_delivery( false, null, 1 );
+ok( 'discarded' === $d['status'] && 'missing_client_id' === $d['reason_code'], 'client_id mancante -> discarded (missing_client_id), non sent' );
+ok( false === $d['retry'], 'discarded non è ritentabile' );
+// invio ok -> sent.
+$d = ATI_Event_Queue::classify_delivery( true, array( 'ok' => true, 'code' => 204 ), 1 );
+ok( 'sent' === $d['status'], 'invio ok -> sent' );
+// errore HTTP ritentabile -> failed + retry.
+$d = ATI_Event_Queue::classify_delivery( true, array( 'ok' => false, 'error' => 'http_500', 'code' => 500 ), 1 );
+ok( 'failed' === $d['status'] && true === $d['retry'] && 'delivery_error' === $d['reason_code'], 'errore HTTP -> failed con retry' );
+ok( 'http_500' === $d['last_error'], 'last_error sanitizzato presente' );
+// oltre MAX_ATTEMPTS -> failed terminale.
+$d = ATI_Event_Queue::classify_delivery( true, array( 'ok' => false, 'error' => 'http_500' ), ATI_Event_Queue::MAX_ATTEMPTS );
+ok( 'failed' === $d['status'] && false === $d['retry'], 'raggiunto MAX_ATTEMPTS -> failed terminale (no retry)' );
+// configurazione mancante -> failed ritentabile, mai sent.
+$d = ATI_Event_Queue::classify_delivery( true, array( 'ok' => false, 'error' => 'missing_configuration' ), 1 );
+ok( 'failed' === $d['status'] && 'missing_configuration' === $d['reason_code'] && true === $d['retry'], 'configurazione mancante -> failed ritentabile, non sent' );
+
+// -------------------------------------------------------------------------
+section( 'Adapter send(): guardie senza rete (Test 11, 14)' );
+$_COOKIE = array();
+$evNoCid = ATI_Event::from_array( array( 'event_name' => 'generate_lead', 'client_id' => '' ) );
+$r = ATI_GA4_Adapter::send( $evNoCid );
+ok( false === $r['ok'] && 'missing_client_id' === $r['error'], 'send senza client_id: nessun invio, error missing_client_id' );
+// client_id presente ma secret assente -> missing_configuration (nessuna rete).
+$GLOBALS['__ati_opts']['ati_ga4_server_id']  = 'G-TEST';
+$GLOBALS['__ati_opts']['ati_ga4_api_secret'] = '';
+$evCid = ATI_Event::from_array( array( 'event_name' => 'generate_lead', 'client_id' => '111.222' ) );
+$r = ATI_GA4_Adapter::send( $evCid );
+ok( false === $r['ok'] && 'missing_configuration' === $r['error'], 'secret assente -> missing_configuration, nessun invio' );
+
+// -------------------------------------------------------------------------
+section( 'Track: consenso analytics negato -> no_consent (Test 2)' );
+// Config pronta + pipeline attiva, ma nessun cookie analytics (consenso negato).
+$GLOBALS['__ati_opts']['ati_ga4_server_id']         = 'G-TEST';
+$GLOBALS['__ati_opts']['ati_ga4_api_secret']        = 'secret_presente';
+$GLOBALS['__ati_opts']['ati_ga4_confirmed_enabled'] = '1';
+$GLOBALS['__ati_opts']['ati_ga4_analytics_consent_mode'] = 'auto';
+$_COOKIE = array(); // nessun consenso analytics.
+$out = ati_track_confirmed_event( 'generate_lead', array( 'business_area' => 'x' ), array( 'client_id' => '111.222' ) );
+ok( 'no_consent' === $out['status'] && 'analytics_consent_missing' === $out['reason'], 'consenso analytics negato -> no_consent (nessun invio/coda)' );
+
+// Pipeline disattivata -> skipped.
+$GLOBALS['__ati_opts']['ati_ga4_confirmed_enabled'] = '0';
+$out = ati_track_confirmed_event( 'generate_lead', array(), array() );
+ok( 'skipped' === $out['status'] && 'pipeline_disabled' === $out['reason'], 'pipeline OFF -> skipped' );
+
+// -------------------------------------------------------------------------
+section( 'Parsing cookie GA4 invalido -> fallback controllato (Test 11)' );
+$_COOKIE = array( '_ga' => 'garbage' );
+ok( '' === ATI_GA4_Client_Context::client_id_from_ga_cookie(), 'cookie _ga malformato -> client_id vuoto (nessuna identità inventata)' );
+$_COOKIE = array( '_ga' => 'GA1.1.abc.def' );
+ok( '' === ATI_GA4_Client_Context::client_id_from_ga_cookie(), 'cookie _ga con parti non numeriche -> vuoto' );
+$_COOKIE = array( '_ga_XYZ' => 'INVALID_FORMAT' );
+ok( '' === ATI_GA4_Client_Context::session_id_from_ga_cookie(), 'cookie sessione malformato -> session_id vuoto' );
+$_COOKIE = array();
 
 // -------------------------------------------------------------------------
 echo "\n---------------------------------------\n";
