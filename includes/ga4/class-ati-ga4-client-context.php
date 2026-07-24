@@ -7,8 +7,14 @@
  * inviati con la richiesta (submit del form / chiamata REST), quindi il server può
  * ricostruire l'identità GA4 reale SENZA generare UUID casuali.
  *
- * Il bridge JavaScript resta il metodo autoritativo (gtag('get', ...)); questi
- * valori da cookie sono il fallback robusto quando il bridge non è presente.
+ * PRIORITÀ dell'identità:
+ *   1. gtag('get', measurementId, 'client_id'|'session_id')  -> bridge JS (autoritativo)
+ *   2. parsing dei cookie _ga / _ga_*  -> SOLO fallback documentato (questo file)
+ *   3. nessuna identità inventata (mai UUID casuali)
+ *
+ * ATTENZIONE: il formato dei cookie _ga/_ga_* NON è un'API pubblica stabile di
+ * Google e può cambiare senza preavviso. Il parsing è difensivo: in caso di formato
+ * non riconosciuto ritorna stringa vuota (degrado esplicito), senza inventare valori.
  *
  * @package QuickTrackingIntegration\GA4
  */

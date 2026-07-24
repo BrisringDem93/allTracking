@@ -24,7 +24,8 @@
   }
 
   var DEBUG = !!CFG.debug;
-  var GTAG_TIMEOUT_MS = 2000;
+  var GTAG_WAIT_MS = 3000;   // Attesa massima che gtag diventi disponibile.
+  var GTAG_GET_MS = 2000;    // Timeout della singola get.
 
   function log() {
     if (DEBUG && window.console) {
@@ -32,44 +33,92 @@
     }
   }
 
-  // Recupera un campo dal Google Tag con timeout; risolve '' se non disponibile.
+  // Garantisce l'esistenza della funzione gtag anche quando il Google Tag è
+  // gestito da GTM: GTM crea/usa lo stesso dataLayer, quindi uno shim gtag che vi
+  // scrive è processato da gtag.js caricato da GTM. Non crea alcuna identità.
+  function ensureGtag() {
+    if (typeof window.gtag === 'function') {
+      return true;
+    }
+    if (window.dataLayer && typeof window.dataLayer.push === 'function') {
+      window.gtag = function () { window.dataLayer.push(arguments); };
+      return true;
+    }
+    return false;
+  }
+
+  // Attende che gtag sia disponibile, con timeout complessivo.
+  function waitForGtag() {
+    return new Promise(function (resolve) {
+      if (ensureGtag()) { resolve(true); return; }
+      var waited = 0;
+      var step = 100;
+      var iv = setInterval(function () {
+        waited += step;
+        if (ensureGtag()) { clearInterval(iv); resolve(true); return; }
+        if (waited >= GTAG_WAIT_MS) { clearInterval(iv); resolve(false); }
+      }, step);
+    });
+  }
+
+  // FONTE PRIMARIA dell'identità: gtag('get', measurementId, field).
+  // Nessun parsing di cookie lato client (il fallback cookie è SOLO server-side).
+  // Risolve '' se non disponibile: nessuna identità inventata.
   function gtagGet(field) {
     return new Promise(function (resolve) {
       var done = false;
       function finish(val) {
         if (done) return;
         done = true;
-        resolve(val || '');
+        resolve(typeof val === 'string' || typeof val === 'number' ? String(val) : '');
       }
-      var timer = setTimeout(function () { finish(''); }, GTAG_TIMEOUT_MS);
-
+      if (typeof window.gtag !== 'function' || !CFG.measurementId) {
+        finish('');
+        return;
+      }
+      var timer = setTimeout(function () { finish(''); }, GTAG_GET_MS);
       try {
-        if (typeof window.gtag === 'function' && CFG.measurementId) {
-          window.gtag('get', CFG.measurementId, field, function (value) {
-            clearTimeout(timer);
-            finish(value);
-          });
-          return;
-        }
+        window.gtag('get', CFG.measurementId, field, function (value) {
+          clearTimeout(timer);
+          finish(value);
+        });
       } catch (e) {
-        log('gtag get error', field, e);
+        clearTimeout(timer);
+        log('gtag get error', field); // PII-free: nessun valore, nessun dettaglio cookie.
+        finish('');
       }
-      clearTimeout(timer);
-      finish('');
     });
   }
 
   // Costruisce il contesto identità/pagina (nessuna PII).
   function buildContext() {
-    return Promise.all([gtagGet('client_id'), gtagGet('session_id')]).then(function (vals) {
-      return {
-        client_id: vals[0] || '',
-        session_id: vals[1] || '',
-        page_location: window.location.href,
-        page_title: document.title,
-        page_referrer: document.referrer || '',
-        engagement_time_msec: 1
-      };
+    return waitForGtag().then(function (ready) {
+      if (!ready) {
+        // gtag non disponibile entro il timeout: nessuna identità inventata.
+        log('gtag non disponibile: identita delegata al fallback server-side (cookie)');
+        return {
+          client_id: '',
+          session_id: '',
+          page_location: window.location.href,
+          page_title: document.title,
+          page_referrer: document.referrer || '',
+          engagement_time_msec: 1,
+          identity_source: 'none'
+        };
+      }
+      return Promise.all([gtagGet('client_id'), gtagGet('session_id')]).then(function (vals) {
+        var cid = vals[0] || '';
+        log('identita', cid ? 'client_id via gtag' : 'client_id assente (degradato)');
+        return {
+          client_id: cid,
+          session_id: vals[1] || '',
+          page_location: window.location.href,
+          page_title: document.title,
+          page_referrer: document.referrer || '',
+          engagement_time_msec: 1,
+          identity_source: cid ? 'gtag' : 'none'
+        };
+      });
     });
   }
 
