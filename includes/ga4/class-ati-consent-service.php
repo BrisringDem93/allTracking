@@ -63,6 +63,45 @@ class ATI_Consent_Service {
 	}
 
 	/**
+	 * Diagnostica consenso PII-free per il pannello admin.
+	 *
+	 * NON espone il contenuto dei cookie: solo presenza del provider, stato
+	 * analytics rilevato, purpose iubenda configurato ed esito.
+	 *
+	 * @return array{providers:array<int,string>,analytics:bool,iubenda_purpose:int,mode:string}
+	 */
+	public static function diagnostics() {
+		$providers = array();
+
+		foreach ( $_COOKIE as $name => $value ) {
+			if ( preg_match( '/^_iub_cs-\d+$/', (string) $name ) ) {
+				$providers[] = 'iubenda';
+				break;
+			}
+		}
+		if ( isset( $_COOKIE['cmplz_statistics'] ) || isset( $_COOKIE['cmplz_marketing'] ) ) {
+			$providers[] = 'complianz';
+		}
+		if ( isset( $_COOKIE['CookieConsent'] ) ) {
+			$providers[] = 'cookiebot';
+		}
+		if ( isset( $_COOKIE['OptanonConsent'] ) ) {
+			$providers[] = 'onetrust';
+		}
+		$custom = trim( (string) get_option( 'ati_analytics_cookie_name', '' ) );
+		if ( '' !== $custom && isset( $_COOKIE[ $custom ] ) ) {
+			$providers[] = 'custom';
+		}
+
+		return array(
+			'providers'       => array_values( array_unique( $providers ) ),
+			'analytics'       => self::detect_analytics_from_cmps(),
+			'iubenda_purpose' => (int) apply_filters( 'ati_iubenda_analytics_purpose', 4 ),
+			'mode'            => (string) get_option( 'ati_ga4_analytics_consent_mode', 'auto' ),
+		);
+	}
+
+	/**
 	 * Rileva il consenso analytics dai cookie dei CMP supportati.
 	 *
 	 * Segnali (categoria "statistiche/analytics", distinta da marketing):

@@ -177,6 +177,8 @@ class ATI_GA4_Admin {
 			return;
 		}
 		$counts     = ATI_Event_Queue::counts();
+		$discarded_reasons = ATI_Event_Queue::discarded_reasons();
+		$consent_diag = ATI_Consent_Service::diagnostics();
 		$secret_set = ATI_GA4_Config::has_secret();
 		$secret_const = ATI_GA4_Config::secret_is_constant();
 		$map        = get_option( 'ati_ga4_form_map', array() );
@@ -323,6 +325,16 @@ class ATI_GA4_Admin {
 			</form>
 
 			<hr />
+			<h2>Diagnostica consenso</h2>
+			<p class="description">Basata sui cookie della richiesta corrente (admin). Nessun contenuto di cookie viene mostrato.</p>
+			<table class="widefat" style="max-width:600px">
+				<tr><td>Provider consenso rilevati</td><td><strong><?php echo esc_html( implode( ', ', $consent_diag['providers'] ) ?: 'nessuno' ); ?></strong></td></tr>
+				<tr><td>Stato analytics rilevato</td><td><strong><?php echo $consent_diag['analytics'] ? '✅ concesso' : '⚠️ non rilevato'; ?></strong></td></tr>
+				<tr><td>Modalità consenso analytics</td><td><code><?php echo esc_html( $consent_diag['mode'] ); ?></code></td></tr>
+				<tr><td>Purpose iubenda (analytics) configurato</td><td><code><?php echo (int) $consent_diag['iubenda_purpose']; ?></code> <span class="description">(filtro <code>ati_iubenda_analytics_purpose</code>)</span></td></tr>
+			</table>
+
+			<hr />
 			<h2>Testa configurazione GA4</h2>
 			<p class="description">Usa l'endpoint di <strong>validazione/debug</strong> (non crea conversioni, non invia PII, non mostra il secret).</p>
 			<button type="button" class="button button-secondary" id="ati-ga4-test-btn">Testa configurazione GA4</button>
@@ -338,6 +350,17 @@ class ATI_GA4_Admin {
 				<tr><td>failed</td><td><strong><?php echo (int) $counts['failed']; ?></strong></td></tr>
 				<tr><td>discarded</td><td><strong><?php echo (int) $counts['discarded']; ?></strong></td></tr>
 			</table>
+			<?php if ( ! empty( $discarded_reasons ) ) : ?>
+				<p class="description" style="margin-top:6px"><strong>Scartati per motivo:</strong>
+				<?php
+				$parts = array();
+				foreach ( $discarded_reasons as $reason => $n ) {
+					$parts[] = esc_html( $reason ) . ': ' . (int) $n;
+				}
+				echo esc_html( implode( ' · ', $parts ) );
+				?>
+				</p>
+			<?php endif; ?>
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:10px">
 				<input type="hidden" name="action" value="ati_ga4_queue_action" />
 				<?php wp_nonce_field( self::NONCE ); ?>
