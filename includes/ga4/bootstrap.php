@@ -103,7 +103,8 @@ function ati_ga4_enqueue_bridge() {
 	}
 
 	$handle = 'ati-ga4-bridge';
-	$src    = plugins_url( 'assets/js/ga4-bridge.js', dirname( __DIR__ ) . '/plugin.php' );
+	// __DIR__ = includes/ga4 ; la root del plugin è due livelli sopra.
+	$src    = plugins_url( 'assets/js/ga4-bridge.js', dirname( __DIR__, 2 ) . '/plugin.php' );
 
 	wp_register_script( $handle, $src, array(), '1.0.0', true );
 
