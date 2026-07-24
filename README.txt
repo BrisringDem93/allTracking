@@ -2,6 +2,30 @@
 
 Un plugin WordPress che consente di installare rapidamente Facebook Pixel, Google Analytics 4 e Google Tag Manager senza toccare il codice.
 
+Versione: 0.8.0
+
+## GA4 "server-side first" (conversioni confermate)
+
+Dalla 0.8.0 il plugin adotta un'architettura GA4 **server-side first**: il Google Tag /
+GTM resta lato browser per page_view, session_start, first_visit, user_engagement,
+attribuzione, sessioni, client_id, session_id, Consent Mode e misurazione avanzata; il
+backend invia via GA4 Measurement Protocol **solo gli eventi di business confermati**
+(priorità `generate_lead`), dopo la conferma reale del provider del form.
+
+Punti chiave:
+
+- Il semplice evento DOM `submit` **non** è più una conversione GA4 confermata.
+- `client_id`/`session_id` sono quelli **reali** del Google Tag (nessun UUID casuale).
+- Consenso **analytics separato** dal marketing; GA4 MP dipende dal consenso analytics.
+- Coda asincrona affidabile, deduplica interna, endpoint EU/Global, endpoint di
+  validazione, API Secret mai esposto.
+- Meta Pixel / Meta Conversions API / n8n **restano invariati**.
+
+Configurazione: **Impostazioni → GA4 Server-Side**. Guida completa in
+`docs/ga4-configuration.md`; audit e razionale in `docs/ga4-server-side-audit.md`;
+matrice di test in `docs/ga4-test-matrix.md`. Le nuove funzionalità sono **disattivate di
+default** dopo l'aggiornamento e vanno abilitate dall'amministratore.
+
 ## Installazione
 
 1. Copia la cartella del plugin nella directory `wp-content/plugins` del tuo sito WordPress.
