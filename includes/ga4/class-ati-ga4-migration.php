@@ -17,7 +17,8 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class ATI_GA4_Migration {
 
-	const SCHEMA_VERSION = '1';
+	// v2: aggiunge la colonna reason_code alla tabella coda (dbDelta ALTER idempotente).
+	const SCHEMA_VERSION = '2';
 	const VERSION_OPTION = 'ati_ga4_schema_version';
 
 	/**

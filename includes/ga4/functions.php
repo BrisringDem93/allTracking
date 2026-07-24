@@ -82,8 +82,9 @@ if ( ! function_exists( 'ati_track_confirmed_event' ) ) {
 				return $result;
 			}
 			// Politica 'queue': si accoda comunque, senza inventare un client_id casuale.
-			// GA4 MP scarterà l'evento senza client_id, ma l'evento resta tracciato in coda
-			// per diagnosi, senza degradare l'attribuzione con ID fittizi.
+			// Il worker NON invierà l'evento (nessun client_id reale) e lo marcherà
+			// 'discarded' con reason_code='missing_client_id' — mai 'sent'. L'evento
+			// resta visibile nella diagnostica coda senza degradare l'attribuzione.
 		}
 
 		// Deduplica esplicita (backstop: UNIQUE key in coda).

@@ -96,6 +96,16 @@ class ATI_GA4_Adapter {
 	 * @return array{ok:bool,code:int,error:string}
 	 */
 	public static function send( ATI_Event $event ) {
+		// Guardia difensiva: senza client_id reale non si invia nulla e non si
+		// inventa un'identità GA4. Il chiamante (coda) mappa questo caso a 'discarded'.
+		if ( '' === (string) $event->client_id ) {
+			return array(
+				'ok'    => false,
+				'code'  => 0,
+				'error' => 'missing_client_id',
+			);
+		}
+
 		$measurement_id = ATI_GA4_Config::measurement_id();
 		$api_secret     = ATI_GA4_Config::api_secret();
 

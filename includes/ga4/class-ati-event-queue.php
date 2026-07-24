@@ -45,11 +45,21 @@ class ATI_Event_Queue {
 	 * @return void
 	 */
 	public static function install_table() {
+		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
+		dbDelta( self::schema_sql() );
+	}
+
+	/**
+	 * DDL della tabella coda (usato da install_table e dai test DB).
+	 *
+	 * @return string
+	 */
+	public static function schema_sql() {
 		global $wpdb;
 		$table   = self::table();
 		$collate = $wpdb->get_charset_collate();
 
-		$sql = "CREATE TABLE $table (
+		return "CREATE TABLE $table (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			dedup_key char(32) NOT NULL,
 			event_id varchar(191) NOT NULL DEFAULT '',
@@ -63,13 +73,11 @@ class ATI_Event_Queue {
 			next_attempt_at datetime NOT NULL,
 			locked_at datetime DEFAULT NULL,
 			last_error varchar(300) NOT NULL DEFAULT '',
+			reason_code varchar(40) NOT NULL DEFAULT '',
 			PRIMARY KEY  (id),
 			UNIQUE KEY dedup_key (dedup_key),
 			KEY status_next (status, next_attempt_at)
 		) $collate;";
-
-		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
-		dbDelta( $sql );
 	}
 
 	/**
@@ -148,15 +156,7 @@ class ATI_Event_Queue {
 		$table = self::table();
 
 		// 1. Recupera gli elementi bloccati in "processing" oltre la soglia.
-		$stuck_before = self::now( -1 * self::STUCK_SECONDS );
-		$wpdb->query(
-			$wpdb->prepare(
-				"UPDATE $table SET status='pending', locked_at=NULL, updated_at=%s
-				 WHERE status='processing' AND locked_at IS NOT NULL AND locked_at < %s",
-				self::now(),
-				$stuck_before
-			)
-		); // phpcs:ignore WordPress.DB.PreparedSQL
+		self::reclaim_stuck();
 
 		// 2. Seleziona i candidati pronti.
 		$now = self::now();
@@ -209,10 +209,89 @@ class ATI_Event_Queue {
 	}
 
 	/**
+	 * Recupera gli elementi rimasti in "processing" oltre la soglia (crash/timeout).
+	 *
+	 * @return int Righe recuperate.
+	 */
+	public static function reclaim_stuck() {
+		global $wpdb;
+		$table        = self::table();
+		$stuck_before = self::now( -1 * self::STUCK_SECONDS );
+		return (int) $wpdb->query(
+			$wpdb->prepare(
+				"UPDATE $table SET status='pending', locked_at=NULL, updated_at=%s
+				 WHERE status='processing' AND locked_at IS NOT NULL AND locked_at < %s",
+				self::now(),
+				$stuck_before
+			)
+		); // phpcs:ignore WordPress.DB.PreparedSQL
+	}
+
+	/**
+	 * Decisione PURA sullo stato finale di consegna (testabile senza DB/HTTP).
+	 *
+	 * Regole:
+	 * - client_id assente        -> discarded (missing_client_id): NON recuperabile
+	 *   nel worker (il contesto di richiesta è perso). Mai 'sent'.
+	 * - configurazione assente   -> failed (retryable: il secret potrebbe tornare).
+	 * - invio ok                 -> sent.
+	 * - errore trasporto/HTTP    -> failed se attempts>=MAX, altrimenti retry (pending).
+	 *
+	 * @param bool  $has_client_id L'evento ha un client_id reale.
+	 * @param array $send_result   Risultato di ATI_GA4_Adapter::send o null se non inviato.
+	 * @param int   $attempts_next Numero di tentativo (attempts corrente + 1).
+	 * @return array{status:string,reason_code:string,last_error:string,retry:bool}
+	 */
+	public static function classify_delivery( $has_client_id, $send_result, $attempts_next ) {
+		// 1. Nessun client_id reale: mai inviato, mai 'sent', nessuna identità inventata.
+		if ( ! $has_client_id ) {
+			return array(
+				'status'      => 'discarded',
+				'reason_code' => 'missing_client_id',
+				'last_error'  => '',
+				'retry'       => false,
+			);
+		}
+
+		$ok    = is_array( $send_result ) && ! empty( $send_result['ok'] );
+		$error = ( is_array( $send_result ) && isset( $send_result['error'] ) ) ? (string) $send_result['error'] : 'unknown';
+
+		// 2. Invio realmente eseguito e accettato dall'adapter.
+		if ( $ok ) {
+			return array(
+				'status'      => 'sent',
+				'reason_code' => '',
+				'last_error'  => '',
+				'retry'       => false,
+			);
+		}
+
+		// 3. Configurazione mancante: ritentabile (non è un errore permanente del payload).
+		$reason = ( 'missing_configuration' === $error ) ? 'missing_configuration' : 'delivery_error';
+
+		// 4. Errore ritentabile fino a MAX_ATTEMPTS, poi failed terminale.
+		if ( $attempts_next >= self::MAX_ATTEMPTS ) {
+			return array(
+				'status'      => 'failed',
+				'reason_code' => $reason,
+				'last_error'  => substr( $error, 0, 300 ),
+				'retry'       => false,
+			);
+		}
+
+		return array(
+			'status'      => 'failed', // stato transitorio: sarà riportato a pending per il retry
+			'reason_code' => $reason,
+			'last_error'  => substr( $error, 0, 300 ),
+			'retry'       => true,
+		);
+	}
+
+	/**
 	 * Consegna un singolo record ed aggiorna il suo stato.
 	 *
 	 * @param array $row Riga della coda.
-	 * @return bool Successo.
+	 * @return bool True solo se realmente inviato (status sent).
 	 */
 	protected static function deliver( array $row ) {
 		global $wpdb;
@@ -221,50 +300,70 @@ class ATI_Event_Queue {
 		$data  = json_decode( (string) $row['payload'], true );
 		$event = ATI_Event::from_array( is_array( $data ) ? $data : array() );
 
-		$result = ATI_GA4_Adapter::send( $event );
+		$has_client_id = ( '' !== (string) $event->client_id );
 
-		if ( ! empty( $result['ok'] ) ) {
+		// Non chiamare l'adapter se manca il client_id: l'evento non è inviabile.
+		$send_result = $has_client_id ? ATI_GA4_Adapter::send( $event ) : null;
+
+		$attempts_next = (int) $row['attempts'] + 1;
+		$decision      = self::classify_delivery( $has_client_id, $send_result, $attempts_next );
+
+		$destination = self::DESTINATION_FROM_ROW( $row );
+
+		// --- Applica lo stato deciso ---
+		if ( 'sent' === $decision['status'] ) {
 			$wpdb->query(
 				$wpdb->prepare(
-					"UPDATE $table SET status='sent', locked_at=NULL, updated_at=%s, last_error='' WHERE id=%d",
+					"UPDATE $table SET status='sent', locked_at=NULL, updated_at=%s, last_error='', reason_code='' WHERE id=%d",
 					self::now(),
 					(int) $row['id']
 				)
 			); // phpcs:ignore WordPress.DB.PreparedSQL
-
-			/** Evento inviato con successo. */
-			do_action( 'ati_event_sent', $event, self::DESTINATION_FROM_ROW( $row ) );
+			do_action( 'ati_event_sent', $event, $destination );
 			return true;
 		}
 
-		$attempts = (int) $row['attempts'] + 1;
-		$error    = isset( $result['error'] ) ? substr( (string) $result['error'], 0, 300 ) : 'unknown';
-
-		if ( $attempts >= self::MAX_ATTEMPTS ) {
+		if ( 'discarded' === $decision['status'] ) {
 			$wpdb->query(
 				$wpdb->prepare(
-					"UPDATE $table SET status='failed', attempts=%d, locked_at=NULL, updated_at=%s, last_error=%s WHERE id=%d",
-					$attempts,
+					"UPDATE $table SET status='discarded', locked_at=NULL, updated_at=%s, reason_code=%s, last_error=%s WHERE id=%d",
 					self::now(),
-					$error,
+					$decision['reason_code'],
+					$decision['last_error'],
 					(int) $row['id']
 				)
 			); // phpcs:ignore WordPress.DB.PreparedSQL
-
-			/** Evento fallito in modo terminale. */
-			do_action( 'ati_event_failed', $event, $error );
+			/** Evento scartato definitivamente (es. missing_client_id). */
+			do_action( 'ati_event_discarded', $event, $decision['reason_code'] );
 			return false;
 		}
 
-		// Backoff progressivo: 1,2,4,8... minuti.
-		$delay = (int) min( 3600, 60 * pow( 2, $attempts - 1 ) );
+		// failed: terminale oppure retry con backoff.
+		if ( empty( $decision['retry'] ) ) {
+			$wpdb->query(
+				$wpdb->prepare(
+					"UPDATE $table SET status='failed', attempts=%d, locked_at=NULL, updated_at=%s, reason_code=%s, last_error=%s WHERE id=%d",
+					$attempts_next,
+					self::now(),
+					$decision['reason_code'],
+					$decision['last_error'],
+					(int) $row['id']
+				)
+			); // phpcs:ignore WordPress.DB.PreparedSQL
+			do_action( 'ati_event_failed', $event, $decision['last_error'] );
+			return false;
+		}
+
+		// Retry: backoff progressivo 1,2,4,8... minuti, torna a pending.
+		$delay = (int) min( 3600, 60 * pow( 2, $attempts_next - 1 ) );
 		$wpdb->query(
 			$wpdb->prepare(
-				"UPDATE $table SET status='pending', attempts=%d, locked_at=NULL, updated_at=%s, next_attempt_at=%s, last_error=%s WHERE id=%d",
-				$attempts,
+				"UPDATE $table SET status='pending', attempts=%d, locked_at=NULL, updated_at=%s, next_attempt_at=%s, reason_code=%s, last_error=%s WHERE id=%d",
+				$attempts_next,
 				self::now(),
 				self::now( $delay ),
-				$error,
+				$decision['reason_code'],
+				$decision['last_error'],
 				(int) $row['id']
 			)
 		); // phpcs:ignore WordPress.DB.PreparedSQL
@@ -320,6 +419,26 @@ class ATI_Event_Queue {
 			$counts[ $r['status'] ] = (int) $r['n'];
 		}
 		return $counts;
+	}
+
+	/**
+	 * Conteggio degli eventi scartati raggruppati per reason_code.
+	 *
+	 * @return array<string,int>
+	 */
+	public static function discarded_reasons() {
+		global $wpdb;
+		$table = self::table();
+		$rows  = $wpdb->get_results(
+			"SELECT reason_code, COUNT(*) AS n FROM $table WHERE status='discarded' GROUP BY reason_code",
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL
+		$out = array();
+		foreach ( (array) $rows as $r ) {
+			$code         = '' !== (string) $r['reason_code'] ? (string) $r['reason_code'] : 'unknown';
+			$out[ $code ] = (int) $r['n'];
+		}
+		return $out;
 	}
 
 	/**
