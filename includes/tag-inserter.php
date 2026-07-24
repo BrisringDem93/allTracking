@@ -976,10 +976,14 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     return contact;
   }
 
+  // NOTA (server-side first): questo listener DOM 'submit' alimenta il percorso
+  // Meta/n8n (comportamento invariato). NON è più una conversione GA4 confermata:
+  // il generate_lead GA4 parte solo dopo la conferma reale del provider tramite
+  // la pipeline server-confirmed (ati_track_confirmed_event / hook ati_confirmed_lead).
   document.addEventListener('submit', e => {
     const form = e.target;
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    console.log('[FST] FormSubmit', form);
+    console.log('[FST] FormSubmit (Meta/n8n)', form);
 <?php endif; ?>
     const leadPayload = {
       type: 'Lead',

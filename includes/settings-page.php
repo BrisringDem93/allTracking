@@ -13,8 +13,6 @@ if ( ! defined( 'ABSPATH' ) ) {
 function ati_register_settings() {
     register_setting( 'ati_settings', 'ati_fb_pixel_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_ga4_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
-    register_setting( 'ati_settings', 'ati_ga4_server_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
-    register_setting( 'ati_settings', 'ati_ga4_api_secret', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_gtm_id', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_enable_fb', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_enable_ga4', array( 'sanitize_callback' => 'sanitize_text_field' ) );
@@ -25,7 +23,10 @@ function ati_register_settings() {
     register_setting( 'ati_settings', 'ati_server_endpoint', array( 'sanitize_callback' => 'esc_url_raw' ) );
     register_setting( 'ati_settings', 'ati_server_auth_key', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_server_auth_value', array( 'sanitize_callback' => 'sanitize_text_field' ) );
-    register_setting( 'ati_settings', 'ati_enable_ga4_server', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+    // NOTA: GA4 server-side (Measurement ID server, API Secret mascherato, invio
+    // server, regione, classificazione, coda, test) sono gestiti nella pagina
+    // dedicata "GA4 Server-Side" (ATI_GA4_Admin). L'API Secret non viene mai
+    // renderizzato in HTML.
 }
 add_action( 'admin_init', 'ati_register_settings' );
 
@@ -64,10 +65,13 @@ function ati_settings_page() {
                     </td>
                 </tr>
                 <tr>
-                    <th scope="row"><label for="ati_ga4_api_secret">GA4 API Secret</label></th>
+                    <th scope="row">GA4 Server-Side</th>
                     <td>
-                        <input name="ati_ga4_api_secret" type="password" id="ati_ga4_api_secret" value="<?php echo esc_attr( get_option( 'ati_ga4_api_secret', '' ) ); ?>" class="regular-text" />
-                        <p class="description">Necessario solo per tracking server-side via Measurement Protocol</p>
+                        <p class="description">
+                            L'API Secret e il tracking server-side GA4 (Measurement Protocol, conversioni confermate, regione, classificazione, coda, test) si configurano nella pagina dedicata
+                            <a href="<?php echo esc_url( admin_url( 'options-general.php?page=ati-ga4-settings' ) ); ?>"><strong>GA4 Server-Side</strong></a>.
+                            L'API Secret non viene mai mostrato in questa pagina.
+                        </p>
                     </td>
                 </tr>
                 <tr>
@@ -127,27 +131,14 @@ function ati_settings_page() {
                     </td>
                 </tr>
                 <tr>
-                    <th scope="row"><label for="ati_ga4_server_id">GA4 Measurement ID (Server-side)</label></th>
+                    <th scope="row">GA4 Measurement Protocol</th>
                     <td>
-                        <input name="ati_ga4_server_id" type="text" id="ati_ga4_server_id" value="<?php echo esc_attr( get_option( 'ati_ga4_server_id', '' ) ); ?>" class="regular-text" />
-                        <p class="description">ID GA4 specifico per Measurement Protocol server-side (può essere diverso da quello client-side)</p>
+                        <p class="description">
+                            Le impostazioni GA4 server-side (Measurement ID server, API Secret, invio server, regione, classificazione, coda e test) sono nella pagina
+                            <a href="<?php echo esc_url( admin_url( 'options-general.php?page=ati-ga4-settings' ) ); ?>"><strong>GA4 Server-Side</strong></a>.
+                        </p>
                     </td>
                 </tr>
-                <tr>
-                    <th scope="row">&nbsp;</th>
-                    <td>
-                        <fieldset>
-                            <legend class="screen-reader-text"><span>Opzioni server-side</span></legend>
-                            <label>
-                                <input type="checkbox" name="ati_enable_ga4_server" value="1" <?php checked( get_option( 'ati_enable_ga4_server', false ), '1' ); ?> />
-                                <?php esc_html_e( 'Invia eventi a GA4 anche da server (Measurement Protocol)', 'ati' ); ?>
-                            </label>
-                            <p class="description">Richiede GA4 Server ID e API Secret configurati sopra. Migliora la precisione dei dati GA4.</p>
-                        </fieldset>
-                    </td>
-                </tr>
-
-
             </table>
 
             <h2><?php esc_html_e( 'Informazioni di stato', 'ati' ); ?></h2>

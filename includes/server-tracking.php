@@ -110,8 +110,8 @@ function fst_ajax_pageview_handler() {
     
     // STEP 1: Log di debug per verificare che la funzione venga chiamata
     if ( WP_DEBUG ) {
-        error_log( '[FST] 🎯 AJAX PageView handler chiamato' );
-        error_log( '[FST] POST data: ' . print_r( $_POST, true ) );
+        error_log( '[FST] AJAX PageView handler chiamato' );
+        // PII-safe: non logghiamo i dati POST completi.
     }
     
     // STEP 2: Sanitizza e valida i dati ricevuti dal JavaScript
@@ -144,8 +144,7 @@ function fst_ajax_pageview_handler() {
     
     // DEBUG: Log dell'evento completo prima dell'invio
     if ( WP_DEBUG ) {
-        error_log( '[FST] 📤 Evento PageView completo da inviare:' );
-        error_log( '[FST] ' . print_r( $event, true ) );
+        error_log( '[FST] Evento PageView pronto (id: ' . $event_id . ')' );
     }
     
     // NUOVO: Aggiunge fbclid ai custom_data se presente
@@ -164,9 +163,13 @@ function fst_ajax_pageview_handler() {
     // STEP 5: Invia l'evento al webhook n8n (se configurato nelle impostazioni)
     fst_send_to_n8n( [ 'data' => [ $event ] ] );
     
-    // STEP 6: Invia anche a GA4 server-side (se abilitato nelle impostazioni)
-    if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
-        fst_send_to_ga4( 'page_view', [ 'page_title' => $page_title ] );
+    // STEP 6: PageView server-side GA4 (MODALITÀ AVANZATA, OFF di default).
+    // Il Google Tag invia già page_view dal browser: per evitare duplicazioni,
+    // il page_view server-side parte solo se l'amministratore lo abilita
+    // esplicitamente (ati_ga4_server_pageview) oltre al legacy ati_enable_ga4_server.
+    if ( get_option( 'ati_enable_ga4_server' ) === '1'
+        && class_exists( 'ATI_GA4_Config' ) && ATI_GA4_Config::server_pageview_enabled() ) {
+        fst_send_to_ga4( 'page_view', [ 'page_title' => $page_title ], $page_url );
     }
 
     // STEP 7: Termina l'esecuzione AJAX con messaggio di conferma
@@ -279,32 +282,40 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
 
     // STEP 5: Log di debug per monitoraggio
     if ( WP_DEBUG ) {
-        error_log( '[FST] 🎯 ' . $type . ' da JavaScript: ID ' . $event_id );
-        error_log( '[FST] 📤 Evento ' . $type . ' completo da inviare:' );
-        error_log( '[FST] ' . print_r( $event, true ) );
+        error_log( '[FST] ' . $type . ' da JavaScript: ID ' . $event_id );
+        // PII-safe: non logghiamo l'evento completo (può contenere user_data).
     }
 
     // STEP 6: Invia a n8n (webhook personalizzato)
     fst_send_to_n8n( [ 'data' => [ $event ] ] );
     
-    // STEP 7: Invia anche a GA4 server-side (se abilitato)
+    // STEP 7: GA4 server-side legacy (Measurement Protocol).
+    //
+    // IMPORTANTE (server-side first): quando la nuova pipeline "eventi confermati"
+    // è attiva, il submit generico NON deve più generare generate_lead. In quel caso
+    // Lead/FormSubmit vengono ESCLUSI da questo percorso legacy: il generate_lead
+    // parte solo dopo la conferma reale del provider (ati_track_confirmed_event).
     if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
         // Mappa i nomi degli eventi ai nomi ufficiali GA4 (Measurement Protocol)
         $ga4_name_map = [
-            'Lead'         => 'generate_lead',   // Evento raccomandato GA4 per form lead
-            'FormSubmit'   => 'generate_lead',
             'FormStart'    => 'form_start',       // Evento raccomandato GA4 per inizio form
             'deepInterest' => 'deep_interest',    // Evento personalizzato
             'deepPlus'     => 'deep_plus',        // Evento personalizzato
         ];
-        $ga4_event_name = isset( $ga4_name_map[ $type ] )
-            ? $ga4_name_map[ $type ]
-            // Fallback camelCase → snake_case: lcfirst() abbassa il primo carattere (evita underscore
-            // iniziale), poi il regex aggiunge '_' davanti ad ogni lettera maiuscola rimanente.
-            // Nota: non gestisce acronyms consecutivi (es. "HTTPError" → "h_t_t_p_error");
-            // tutti i tipi previsti (ButtonClick ecc.) producono risultati corretti.
-            : strtolower( preg_replace( '/([A-Z])/', '_$1', lcfirst( $type ) ) );
-        fst_send_to_ga4( $ga4_event_name, [ 'label' => $label ] );
+
+        // SERVER-SIDE FIRST: il submit DOM generico NON è una conversione confermata.
+        // Lead/FormSubmit non generano MAI generate_lead da questo percorso legacy.
+        // Il generate_lead parte esclusivamente dalla pipeline "eventi confermati"
+        // (ati_track_confirmed_event) dopo la conferma reale del provider.
+        $is_unconfirmed_lead = in_array( $type, [ 'Lead', 'FormSubmit' ], true );
+
+        if ( ! $is_unconfirmed_lead ) {
+            $ga4_event_name = isset( $ga4_name_map[ $type ] )
+                ? $ga4_name_map[ $type ]
+                // Fallback camelCase → snake_case.
+                : strtolower( preg_replace( '/([A-Z])/', '_$1', lcfirst( $type ) ) );
+            fst_send_to_ga4( $ga4_event_name, [ 'label' => $label ], $page );
+        }
     }
 
     // STEP 8: Restituisce risposta JSON di successo
@@ -336,7 +347,7 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
 function fst_build_user_data( $fbclid = '' ) {
     // DEBUG: Log di tutti i cookie disponibili
     if ( WP_DEBUG ) {
-        error_log( '[FST] 🍪 Cookie disponibili: ' . print_r( $_COOKIE, true ) );
+        error_log( '[FST] Costruzione user_data (cookie non loggati per privacy)' );
     }
     
     // Gestione cookie _fbp con log dettagliato
@@ -344,11 +355,11 @@ function fst_build_user_data( $fbclid = '' ) {
     if ( isset( $_COOKIE['_fbp'] ) ) {
         $fbp_value = sanitize_text_field( $_COOKIE['_fbp'] );
         if ( WP_DEBUG ) {
-            error_log( '[FST] 📘 Cookie _fbp trovato: ' . $fbp_value );
+            error_log( '[FST] Cookie _fbp presente' ); // Valore non loggato (identificatore).
         }
     } else {
         if ( WP_DEBUG ) {
-            error_log( '[FST] ⚠️ Cookie _fbp NON trovato nei cookie HTTP' );
+            error_log( '[FST] Cookie _fbp assente' );
         }
     }
     
@@ -371,7 +382,7 @@ function fst_build_user_data( $fbclid = '' ) {
     if ( isset( $_COOKIE['_fbc'] ) ) {
         $user_data['fbc'] = sanitize_text_field( $_COOKIE['_fbc'] );
         if ( WP_DEBUG ) {
-            error_log( '[FST] 📘 _fbc cookie esistente: ' . $user_data['fbc'] );
+            error_log( '[FST] _fbc cookie presente' ); // Valore non loggato.
         }
     } elseif ( ! empty( $fbclid ) ) {
         // Se non c'è cookie _fbc ma abbiamo fbclid, costruisce il valore manualmente
@@ -397,13 +408,13 @@ function fst_build_user_data( $fbclid = '' ) {
         $user_data['fbc'] = $fbc_value;
         
         if ( WP_DEBUG ) {
-            error_log( '[FST] 📘 _fbc costruito da FBCLID: ' . $fbc_value );
+            error_log( '[FST] _fbc costruito da FBCLID' ); // Valore non loggato.
         }
-        
+
         // OPZIONALE: Imposta anche il cookie nel browser per le prossime richieste
         setcookie( '_fbc', $fbc_value, time() + 7776000, '/', '', false, false ); // 90 giorni
         if ( WP_DEBUG ) {
-            error_log( '[FST] 🍪 Cookie _fbc impostato: ' . $fbc_value );
+            error_log( '[FST] Cookie _fbc impostato' );
         }
 
     } else {
@@ -415,12 +426,14 @@ function fst_build_user_data( $fbclid = '' ) {
     
     // DEBUG: Log finale dei dati user_data costruiti
     if ( WP_DEBUG ) {
-        error_log( '[FST] 📊 User data costruiti:' );
-        error_log( '[FST]   - external_id: ' . $user_data['external_id'] );
-        error_log( '[FST]   - fbp: ' . ( $user_data['fbp'] ? $user_data['fbp'] : 'NULL' ) );
-        error_log( '[FST]   - fbc: ' . ( $user_data['fbc'] ? $user_data['fbc'] : 'NULL' ) );
-        error_log( '[FST]   - IP: ' . $user_data['client_ip_address'] );
-        error_log( '[FST]   - User Agent: ' . substr( $user_data['client_user_agent'], 0, 50 ) . '...' );
+        // PII-safe: logghiamo solo la PRESENZA dei campi, mai i valori (external_id, fbp, fbc, IP, UA).
+        error_log( '[FST] User data costruiti: ' . wp_json_encode( array(
+            'external_id' => ! empty( $user_data['external_id'] ),
+            'fbp'         => ! empty( $user_data['fbp'] ),
+            'fbc'         => ! empty( $user_data['fbc'] ),
+            'ip'          => ! empty( $user_data['client_ip_address'] ),
+            'ua'          => ! empty( $user_data['client_user_agent'] ),
+        ) ) );
     }
     
     return $user_data;
@@ -513,9 +526,8 @@ function fst_send_to_n8n( array $payload ) {
     
     // STEP 4: Log dettagliato per debugging (solo se WP_DEBUG è attivo)
     if ( WP_DEBUG ) {
-        error_log( '[FST] ► Invio a n8n – ' . $payload['data'][0]['event_name'] . ' ID: ' . $payload['data'][0]['event_id'] );
-        error_log( '[FST]   Endpoint : ' . $endpoint );
-        error_log( '[FST]   Payload  : ' . $body );
+        error_log( '[FST] Invio a n8n - ' . $payload['data'][0]['event_name'] . ' ID: ' . $payload['data'][0]['event_id'] );
+        // PII-safe: endpoint e payload completi (che contengono user_data) non vengono loggati.
     }
     
     // STEP 5: Invia richiesta POST al webhook n8n
@@ -537,8 +549,7 @@ function fst_send_to_n8n( array $payload ) {
     
     // Log della risposta per monitoring
     if ( WP_DEBUG ) {
-        error_log( '[FST] ◄ Risposta n8n: HTTP ' . $code );
-        error_log( '[FST]   Response: ' . $res_body );
+        error_log( '[FST] Risposta n8n: HTTP ' . $code );
     }
     
     // Logga errori HTTP (se diverso da 200 OK)
@@ -564,58 +575,55 @@ function fst_send_to_n8n( array $payload ) {
  * - ati_ga4_api_secret: Secret per Measurement Protocol
  * - ati_enable_ga4_server: deve essere "1" per abilitare
  * 
+ * NOTA (server-side first): questa funzione è il percorso GA4 LEGACY, usato solo
+ * per il PageView server-side avanzato e per gli eventi non-lead quando il vecchio
+ * invio è attivo. Le conversioni confermate (generate_lead) passano invece dalla
+ * nuova pipeline (ati_track_confirmed_event -> coda -> ATI_GA4_Adapter).
+ *
+ * Il client_id/session_id sono quelli REALI del Google Tag (cookie _ga/_ga_*),
+ * NON viene più generato un UUID casuale per richiesta. Include ora anche
+ * timestamp_micros, session_id ed engagement_time_msec.
+ *
  * @param string $eventName Nome evento GA4 (es: "page_view", "button_click")
- * @param array $params Parametri personalizzati dell'evento
+ * @param array  $params    Parametri personalizzati dell'evento
+ * @param string $page_url  URL pagina sorgente (opzionale)
  * @return void
  * @since 1.1
  */
-function fst_send_to_ga4( string $eventName, array $params = [] ) {
-    // STEP 1: Verifica configurazione GA4 server-side
-    $measurement_id = trim( get_option( 'ati_ga4_server_id', '' ) );  // Usa ID specifico per server
-    $api_secret     = trim( get_option( 'ati_ga4_api_secret', '' ) );
-    
-    if ( empty( $measurement_id ) || empty( $api_secret ) ) {
-        return; // Se non configurato, esce silenziosamente
+function fst_send_to_ga4( string $eventName, array $params = [], string $page_url = '' ) {
+    // Richiede il sottosistema GA4 (centralizza config, endpoint, client context).
+    if ( ! class_exists( 'ATI_GA4_Config' ) || ! class_exists( 'ATI_GA4_Adapter' ) ) {
+        return;
     }
-    
-    // STEP 2: Costruisce URL endpoint GA4 Measurement Protocol
-    $endpoint = 'https://www.google-analytics.com/mp/collect?measurement_id=' . 
-                rawurlencode( $measurement_id ) . '&api_secret=' . rawurlencode( $api_secret );
-    
-    // STEP 3: Costruisce payload nel formato GA4
-    $client_id = fst_get_uid();
-    // GA4 richiede un client_id non vuoto.
-    // Fallback 1: cookie _ga (formato GA1.x.XXXXXXXXXX.XXXXXXXXXX) — preserva la sessione GA4.
-    // Fallback 2: UUID casuale di richiesta (limita cross-session attribution, usato solo come sicurezza).
-    if ( empty( $client_id ) && isset( $_COOKIE['_ga'] ) ) {
-        $ga_parts = explode( '.', $_COOKIE['_ga'] );
-        if ( count( $ga_parts ) >= 4 ) {
-            // Sanitizza: il client_id GA4 contiene solo cifre e un punto separatore.
-            $part2 = preg_replace( '/[^0-9]/', '', $ga_parts[2] );
-            $part3 = preg_replace( '/[^0-9]/', '', $ga_parts[3] );
-            if ( $part2 !== '' && $part3 !== '' ) {
-                $client_id = $part2 . '.' . $part3;
-            }
+    if ( ! ATI_GA4_Config::is_ready() ) {
+        return; // Measurement ID + API secret non configurati.
+    }
+
+    // client_id/session_id reali dal Google Tag (cookie first-party). Nessun UUID casuale.
+    $ctx = ATI_GA4_Client_Context::from_cookies();
+    if ( '' === $ctx['client_id'] ) {
+        // Attribuzione degradata esplicita: senza client_id reale non si inventa un ID.
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[FST] GA4 legacy: client_id reale assente, evento non inviato (' . sanitize_key( $eventName ) . ')' );
         }
+        return;
     }
-    if ( empty( $client_id ) ) {
-        $client_id = wp_generate_uuid4();
+
+    $event = ATI_Event::from_array( array(
+        'event_name'           => $eventName,
+        'event_timestamp_micros' => (int) round( microtime( true ) * 1000000 ),
+        'client_id'            => $ctx['client_id'],
+        'session_id'           => $ctx['session_id'],
+        'engagement_time_msec' => 1,
+        'page_location'        => $page_url,
+        'source'               => 'server_pageview',
+        'params'               => $params,
+    ) );
+
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[FST] GA4 legacy invio: ' . sanitize_key( $eventName ) );
     }
-    $body = [
-        'client_id' => $client_id,                              // Stesso ID utente di Facebook (o fallback)
-        'events'    => [ [ 'name' => $eventName, 'params' => $params ] ], // Array eventi
-    ];
-    
-    // STEP 4: Log di debug
-    if ( WP_DEBUG ) {
-        error_log( '[FST] ▶️ GA4: ' . $eventName );
-    }
-    
-    // STEP 5: Invia a GA4 (fire-and-forget, senza gestione errori dettagliata)
-    wp_remote_post( $endpoint, [
-        'headers' => [ 'Content-Type' => 'application/json' ],
-        'body'    => wp_json_encode( $body ),
-        'timeout' => 5,
-    ] );
+
+    ATI_GA4_Adapter::send( $event );
 }
 ?>
