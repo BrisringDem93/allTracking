@@ -99,8 +99,54 @@ window.atiGa4 && window.atiGa4.trackConfirmedLead({}, { form_id: 'form-123' });
 | `ati_event_queued` | action | Reagisce a un evento accodato |
 | `ati_event_sent` | action | Reagisce a un evento inviato |
 | `ati_event_failed` | action | Reagisce a un evento fallito |
+| `ati_event_discarded` | action | Reagisce a un evento scartato (con reason_code) |
 | `ati_event_deduplicated` | action | Reagisce a un evento deduplicato |
 | `ati_ga4_migrated` | action | Migrazione schema completata |
+
+## 6-bis. Consenso analytics con iubenda (dettaglio)
+
+Il consenso **analytics** (categoria *statistiche/misurazione*) è distinto dal marketing
+e governa GA4 Measurement Protocol. Per iubenda, lato server:
+
+- **Sorgente letta**: i cookie `_iub_cs-<id>` (JSON). Viene letto il campo
+  `purposes[<n>]`. Nessun contenuto del cookie viene mostrato nel pannello.
+- **Purpose predefinito**: `4` (Measurement) — best-effort. iubenda può numerare i
+  purpose diversamente a seconda della configurazione della privacy policy.
+- **Come si configura il purpose**: filtro WordPress
+  ```php
+  add_filter( 'ati_iubenda_analytics_purpose', function () { return 4; } );
+  ```
+  In alternativa si può forzare il consenso analytics con il filtro
+  `ati_has_analytics_consent` (sconsigliato) o impostando la modalità su *Auto*.
+- **Cookie assente**: nessun purpose leggibile ⇒ consenso analytics = **false**
+  (comportamento sicuro, GA4 MP non invia).
+- **Consenso negato**: `purposes[<n>] !== true` ⇒ analytics = **false**.
+- **Revoca**: alla revoca iubenda riscrive `_iub_cs-*`; alla richiesta successiva il
+  purpose non risulta più `true` ⇒ analytics = **false**. (Lato server ogni richiesta
+  rilegge il cookie: non c'è stato memorizzato.)
+- **Fallback formato non riconosciuto**: se il JSON non è decodificabile o manca
+  `purposes`, il rilevamento ritorna **false** senza inventare un consenso.
+
+Lato browser, il rilevamento del consenso **marketing** (per Meta) resta gestito da
+`hasMarketingConsent()` in `tag-inserter.php` (invariato). La diagnostica del pannello
+GA4 mostra: provider rilevati, stato analytics, modalità e purpose iubenda configurato,
+**senza** mostrare i cookie.
+
+## 6-ter. Semantica dello stato `sent` (limite noto)
+
+Un record diventa `sent` **solo** quando: il payload è stato costruito, la richiesta HTTP
+è stata realmente eseguita, non c'è errore di trasporto, e la risposta è coerente con la
+policy dell'adapter (HTTP 2xx dell'endpoint *collect*).
+
+**Limite documentato**: l'endpoint di raccolta GA4 (`/mp/collect`) restituisce 2xx (di
+norma 204) **senza validare semanticamente** il payload (nomi evento/parametri). Perciò
+`sent` significa "richiesta accettata a livello di trasporto", non "evento semanticamente
+valido in GA4". Per la validazione semantica si usa l'endpoint di **debug/validazione**
+(`/debug/mp/collect`), che resta **obbligatorio** nella configurazione iniziale tramite
+il pulsante *Testa configurazione GA4*.
+
+Un evento privo di `client_id` reale **non** viene mai inviato né marcato `sent`: viene
+`discarded` con `reason_code=missing_client_id` e conteggiato nella diagnostica coda.
 
 ## 7. Sicurezza dell'API Secret
 

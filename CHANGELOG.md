@@ -2,6 +2,33 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.8.1] - 2026-07-24 — Hardening
+
+### Corretto (bloccante)
+- **Stati coda coerenti**: un evento non inviato non viene **mai** marcato `sent`.
+  Estratta la logica pura `ATI_Event_Queue::classify_delivery()`; aggiunta colonna
+  `reason_code` (schema v2) e lo stato **`discarded`**.
+- **client_id assente**: nessun UUID casuale; l'evento è `discarded` con
+  `reason_code=missing_client_id` (non recuperabile nel worker), conteggiato nella
+  diagnostica coda (`discarded_reasons()`). Guardia difensiva anche in
+  `ATI_GA4_Adapter::send()` (nessuna richiesta HTTP senza client_id).
+- **Configurazione assente** → `failed` ritentabile (mai `sent`).
+
+### Aggiunto
+- Bridge: shim `gtag` per **GTM**, attesa con timeout (`waitForGtag`), diagnostica
+  PII-free, priorità esplicita gtag→(fallback cookie solo server-side)→nessuna identità.
+- Diagnostica consenso nel pannello (provider rilevati, stato analytics, modalità,
+  purpose iubenda) senza mostrare i cookie.
+- `ATI_Event_Queue::reclaim_stuck()` e `schema_sql()` (testabili).
+- Test: `tests/db-tests.php` (13 test su **MariaDB reale**), suite unitaria estesa a 53
+  asserzioni (macchina a stati, guardie adapter, consenso negato, parsing cookie).
+- Documentazione: comportamento iubenda dettagliato e **limite di `sent`** (collect non
+  valida semanticamente; validation endpoint obbligatorio).
+
+### Note
+- Il formato dei cookie `_ga`/`_ga_*` è trattato come **non stabile**: parsing difensivo
+  con degrado esplicito.
+
 ## [0.8.0] - 2026-07-24
 
 ### Aggiunto — GA4 "server-side first"
