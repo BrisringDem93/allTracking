@@ -115,6 +115,9 @@ function ati_ga4_enqueue_bridge() {
 		'enabled'       => true,
 		'submitAttempt' => ( '1' === get_option( 'ati_ga4_enable_submit_attempt', '0' ) ),
 		'debug'         => ( defined( 'WP_DEBUG' ) && WP_DEBUG ),
+		// Versione del PHP in esecuzione: visibile in "Visualizza sorgente" per
+		// verificare che il sito NON stia servendo codice vecchio dalla cache.
+		'v'             => defined( 'ATI_PLUGIN_VERSION' ) ? ATI_PLUGIN_VERSION : '',
 	);
 
 	wp_add_inline_script(

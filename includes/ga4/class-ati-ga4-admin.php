@@ -168,6 +168,51 @@ class ATI_GA4_Admin {
 	}
 
 	/**
+	 * Raccoglie lo stato di versione/deploy per l'indicatore diagnostico.
+	 *
+	 * @return array
+	 */
+	public static function version_status() {
+		global $wpdb;
+
+		$header_version = '';
+		if ( function_exists( 'get_plugin_data' ) ) {
+			// Non sempre disponibile fuori dalle pagine plugin; caricamento difensivo.
+			$main = dirname( __DIR__, 2 ) . '/plugin.php';
+			if ( is_readable( $main ) ) {
+				require_once ABSPATH . 'wp-admin/includes/plugin.php';
+				$data           = get_plugin_data( $main, false, false );
+				$header_version = isset( $data['Version'] ) ? $data['Version'] : '';
+			}
+		}
+
+		// Colonna reason_code presente? (prova che lo schema v2 è applicato).
+		$table    = ATI_Event_Queue::table();
+		$has_col  = false;
+		$col_name = $wpdb->get_var( $wpdb->prepare( 'SHOW COLUMNS FROM ' . $table . ' LIKE %s', 'reason_code' ) ); // phpcs:ignore
+		$has_col  = ( 'reason_code' === $col_name );
+
+		// Firma del bridge JS su disco (per smascherare cache/minify che servono un file diverso).
+		$bridge_path = dirname( __DIR__, 2 ) . '/assets/js/ga4-bridge.js';
+		$bridge_ok   = is_readable( $bridge_path );
+		$bridge_sig  = $bridge_ok ? substr( md5_file( $bridge_path ), 0, 10 ) : '';
+		$bridge_mt   = $bridge_ok ? gmdate( 'Y-m-d H:i', (int) filemtime( $bridge_path ) ) . ' UTC' : '';
+
+		return array(
+			'plugin_version'   => defined( 'ATI_PLUGIN_VERSION' ) ? ATI_PLUGIN_VERSION : 'n/d',
+			'header_version'   => '' !== $header_version ? $header_version : 'n/d',
+			'schema_installed' => (string) get_option( ATI_GA4_Migration::VERSION_OPTION, '0' ),
+			'schema_expected'  => ATI_GA4_Migration::SCHEMA_VERSION,
+			'has_reason_code'  => $has_col,
+			'bridge_exists'    => $bridge_ok,
+			'bridge_sig'       => $bridge_sig,
+			'bridge_mtime'     => $bridge_mt,
+			'confirmed_enabled' => ATI_GA4_Config::confirmed_enabled(),
+			'is_ready'         => ATI_GA4_Config::is_ready(),
+		);
+	}
+
+	/**
 	 * Rende la pagina admin.
 	 *
 	 * @return void
@@ -185,9 +230,52 @@ class ATI_GA4_Admin {
 		$map        = is_array( $map ) ? $map : array();
 		// Riga vuota per aggiungere un nuovo mapping.
 		$map[]      = array();
+		$ver = self::version_status();
 		?>
 		<div class="wrap">
 			<h1>GA4 Server-Side</h1>
+
+			<h2>Stato / versione attiva</h2>
+			<p class="description">Utile per verificare che il sito stia eseguendo il codice aggiornato (e non una versione in cache/OPcache).</p>
+			<table class="widefat" style="max-width:760px">
+				<tr>
+					<td>Versione plugin (runtime)</td>
+					<td><strong><?php echo esc_html( $ver['plugin_version'] ); ?></strong> <span class="description">(header: <?php echo esc_html( $ver['header_version'] ); ?>)</span></td>
+				</tr>
+				<tr>
+					<td>Schema DB</td>
+					<td>
+						installato <code><?php echo esc_html( $ver['schema_installed'] ); ?></code> / atteso <code><?php echo esc_html( $ver['schema_expected'] ); ?></code>
+						<?php if ( $ver['schema_installed'] === $ver['schema_expected'] ) : ?>
+							<span style="color:green">✅ allineato</span>
+						<?php else : ?>
+							<span style="color:#b32d2e">⚠️ migrazione non applicata (codice in cache o migrazione da eseguire)</span>
+						<?php endif; ?>
+					</td>
+				</tr>
+				<tr>
+					<td>Colonna coda <code>reason_code</code></td>
+					<td><?php echo $ver['has_reason_code'] ? '<span style="color:green">✅ presente (schema v2)</span>' : '<span style="color:#b32d2e">❌ assente</span>'; ?></td>
+				</tr>
+				<tr>
+					<td>Bridge JS su disco</td>
+					<td>
+						<?php if ( $ver['bridge_exists'] ) : ?>
+							firma <code><?php echo esc_html( $ver['bridge_sig'] ); ?></code> · modificato <code><?php echo esc_html( $ver['bridge_mtime'] ); ?></code>
+						<?php else : ?>
+							<span style="color:#b32d2e">❌ file non trovato</span>
+						<?php endif; ?>
+					</td>
+				</tr>
+				<tr>
+					<td>Pipeline "Eventi confermati"</td>
+					<td><?php echo $ver['confirmed_enabled'] ? '✅ attiva' : '⏸️ disattivata'; ?> · configurazione <?php echo $ver['is_ready'] ? '✅ pronta' : '⚠️ incompleta (Measurement ID / API Secret)'; ?></td>
+				</tr>
+				<tr>
+					<td>Provider form attivi</td>
+					<td><code><?php echo esc_html( implode( ', ', ATI_Form_Provider_Registry::active_ids() ) ?: 'nessuno' ); ?></code></td>
+				</tr>
+			</table>
 
 			<form method="post" action="options.php">
 				<?php settings_fields( self::GROUP ); ?>

@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 // Versione coerente disponibile a runtime.
 if ( ! defined( 'ATI_PLUGIN_VERSION' ) ) {
-    define( 'ATI_PLUGIN_VERSION', '0.8.2' );
+    define( 'ATI_PLUGIN_VERSION', '0.8.3' );
 }
 
 // Include plugin files

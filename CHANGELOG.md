@@ -2,6 +2,18 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.8.3] - 2026-07-27 — Indicatore versione / diagnostica deploy
+
+### Aggiunto
+- Box **"Stato / versione attiva"** nel pannello GA4: versione plugin runtime vs header,
+  schema installato vs atteso, presenza colonna `reason_code`, firma (md5+mtime) del
+  bridge JS su disco, stato pipeline/configurazione, provider attivi. Serve a smascherare
+  codice servito da cache/OPcache.
+- Campo `v` (versione plugin) nella config inline del bridge (`window.atiGa4Bridge`),
+  visibile in "Visualizza sorgente" per confermare che il PHP in esecuzione è aggiornato.
+- `providers_registered` nel log (provider form attivi/non disponibili).
+- Adapter Fluent: `event_id` stabile `ff_<entry_id>` (dedup a prova di doppio scatto hook).
+
 ## [0.8.2] - 2026-07-27 — Bugfix consenso iubenda / GA4
 
 ### Corretto (bloccante)
