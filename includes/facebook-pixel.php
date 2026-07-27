@@ -8,6 +8,12 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
+// Protezione anti doppio-caricamento (vedi tag-inserter.php).
+if ( defined( 'ATI_FACEBOOK_PIXEL_LOADED' ) ) {
+    return;
+}
+define( 'ATI_FACEBOOK_PIXEL_LOADED', 1 );
+
 
 
 

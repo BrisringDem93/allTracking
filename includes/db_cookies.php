@@ -1,4 +1,10 @@
 <?php
+// Protezione anti doppio-caricamento (vedi tag-inserter.php).
+if ( defined( 'ATI_DB_COOKIES_LOADED' ) ) {
+    return;
+}
+define( 'ATI_DB_COOKIES_LOADED', 1 );
+
 // Funzione per creare la tabella dei cookie
 function fst_create_cookie_table() {
     global $wpdb;

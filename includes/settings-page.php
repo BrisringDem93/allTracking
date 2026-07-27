@@ -7,6 +7,12 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit; // Exit if accessed directly.
 }
 
+// Protezione anti doppio-caricamento (vedi tag-inserter.php).
+if ( defined( 'ATI_SETTINGS_PAGE_LOADED' ) ) {
+    return;
+}
+define( 'ATI_SETTINGS_PAGE_LOADED', 1 );
+
 /**
  * Register plugin settings.
  */

@@ -2,6 +2,15 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.9.1] - 2026-07-27 — Guardie anti doppio-caricamento (fix fatal redeclare)
+
+### Corretto
+- Aggiunte guardie anti doppio-caricamento in `plugin.php` e in tutti gli include
+  (`tag-inserter`, `server-tracking`, `settings-page`, `db_cookies`, `facebook-pixel`,
+  `ga4/bootstrap`). Evita il `Fatal error: Cannot redeclare ...` quando una copia
+  duplicata del plugin (file caricati per errore fuori dalla cartella plugin) viene
+  inclusa una seconda volta. **Rimuovere comunque la copia duplicata** dal server.
+
 ## [0.9.0] - 2026-07-27 — Visibilità pipeline (log worker + tabella eventi)
 
 ### Aggiunto

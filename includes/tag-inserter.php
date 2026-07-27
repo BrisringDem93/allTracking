@@ -7,6 +7,14 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit; // Exit if accessed directly.
 }
 
+// Protezione anti doppio-caricamento: se una copia duplicata del plugin (es. file
+// caricati per errore fuori dalla cartella plugin) include di nuovo questo file, si
+// evita il fatal error "Cannot redeclare ...". Vedi anche gli altri include del plugin.
+if ( defined( 'ATI_TAG_INSERTER_LOADED' ) ) {
+    return;
+}
+define( 'ATI_TAG_INSERTER_LOADED', 1 );
+
 /**
  * Controlla se il consenso marketing è stato dato dall'utente
  * 

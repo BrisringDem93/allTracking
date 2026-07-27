@@ -12,6 +12,13 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
+// Protezione anti doppio-caricamento: se una copia duplicata del plugin include di
+// nuovo il bootstrap, si evita il fatal da ridichiarazione di classi/funzioni GA4.
+if ( defined( 'ATI_GA4_BOOTSTRAP_LOADED' ) ) {
+	return;
+}
+define( 'ATI_GA4_BOOTSTRAP_LOADED', 1 );
+
 $ati_ga4_dir = __DIR__ . '/';
 
 require_once $ati_ga4_dir . 'class-ati-event.php';
