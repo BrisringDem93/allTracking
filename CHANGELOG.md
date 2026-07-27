@@ -2,6 +2,14 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.8.4] - 2026-07-27 — DebugView opzionale
+
+### Aggiunto
+- Opzione **`ati_ga4_debug_mode`** (OFF di default): aggiunge `debug_mode` agli invii
+  `/mp/collect`, così gli eventi server-side diventano visibili in **GA4 DebugView**.
+  Checkbox nel pannello con avviso "solo per test". Nota: NON influenza l'anteprima di
+  Google Tag Manager (che mostra solo gli eventi client-side).
+
 ## [0.8.3] - 2026-07-27 — Indicatore versione / diagnostica deploy
 
 ### Aggiunto
