@@ -202,7 +202,23 @@ class ATI_Provider_Fluent_Forms implements ATI_Form_Provider_Interface {
 	}
 
 	public function register() {
+		// Evento reale: submission salvata con successo.
 		add_action( 'fluentform/submission_inserted', array( $this, 'handle' ), 10, 3 );
+		// Compatibilità con la variante underscore (vecchie installazioni).
+		add_action( 'fluentform_submission_inserted', array( $this, 'handle' ), 10, 3 );
+
+		// Diagnostica log-only: verifica se Fluent avvia l'elaborazione della submission.
+		if ( function_exists( 'ati_ga4_log' ) ) {
+			add_action(
+				'fluentform/before_insert_submission',
+				function ( $insertData = null, $data = null, $form = null ) {
+					$fid = is_object( $form ) && isset( $form->id ) ? (string) $form->id : '';
+					ati_ga4_log( 'fluent_before_insert', array( 'form_id' => $fid ) );
+				},
+				10,
+				3
+			);
+		}
 	}
 
 	/**

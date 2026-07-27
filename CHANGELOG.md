@@ -2,6 +2,16 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.8.5] - 2026-07-27 — Diagnostica Fluent Forms
+
+### Aggiunto
+- Adapter Fluent: registrazione anche dell'hook variante underscore
+  `fluentform_submission_inserted` (compatibilità), protetto da dedup (`event_id`
+  stabile `ff_<entry_id>`).
+- Diagnostica log-only su `fluentform/before_insert_submission` (`fluent_before_insert`)
+  per capire se Fluent avvia l'elaborazione della submission quando `submission_inserted`
+  non scatta.
+
 ## [0.8.4] - 2026-07-27 — DebugView opzionale
 
 ### Aggiunto
