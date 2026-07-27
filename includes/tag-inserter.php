@@ -1003,8 +1003,22 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 
   // Memorizza il payload catturato al submit finché non arriva la conferma di successo.
   const _fstPendingLead = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  // Debounce anti doppio-invio: alcuni provider (es. Fluent Forms) emettono l'evento
+  // di successo più di una volta per lo stesso invio.
+  const _fstLeadSent = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
 
   function fstFlushLead(form) {
+    if (form && _fstLeadSent) {
+      const now = new Date().getTime();
+      const prev = _fstLeadSent.get(form) || 0;
+      if (now - prev < 4000) {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+        console.log('[FST] Lead Meta/n8n gia inviato di recente: doppione ignorato');
+<?php endif; ?>
+        return;
+      }
+      _fstLeadSent.set(form, now);
+    }
     const payload = (_fstPendingLead && form && _fstPendingLead.get(form))
       || (form ? fstBuildLeadPayload(form) : null);
     if (!payload) return;

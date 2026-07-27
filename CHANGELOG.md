@@ -2,6 +2,14 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.8.9] - 2026-07-27 — Fix doppio Lead Meta (Fluent emette il successo 2 volte)
+
+### Corretto
+- Fluent Forms emette `fluentform_submission_success` **due volte** per lo stesso invio:
+  il percorso Meta/n8n inviava il Lead 2 volte (stesso event_id → Facebook dedup, ma 2
+  richieste a n8n). Aggiunto debounce per-form (4s) in `fstFlushLead`. Il bridge GA4 era
+  già protetto dal proprio debounce (per questo GA4 riceveva un solo `generate_lead`).
+
 ## [0.8.8] - 2026-07-27 — Lead Meta su invio riuscito + evento custom form
 
 ### Corretto (Meta/n8n, su autorizzazione)
