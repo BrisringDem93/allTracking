@@ -73,11 +73,30 @@ class ATI_Form_Provider_Registry {
 		 */
 		$providers = apply_filters( 'ati_form_providers', $providers );
 
+		$available   = array();
+		$unavailable = array();
 		foreach ( $providers as $provider ) {
-			if ( $provider instanceof ATI_Form_Provider_Interface && $provider->is_available() ) {
+			if ( ! ( $provider instanceof ATI_Form_Provider_Interface ) ) {
+				continue;
+			}
+			if ( $provider->is_available() ) {
 				$provider->register();
 				self::$providers[ $provider->get_id() ] = $provider;
+				$available[] = $provider->get_id();
+			} else {
+				$unavailable[] = $provider->get_id();
 			}
+		}
+
+		// Diagnostica: quali provider form sono attivi e quali no (PII-free).
+		if ( function_exists( 'ati_ga4_log' ) ) {
+			ati_ga4_log(
+				'providers_registered',
+				array(
+					'active'      => implode( ',', $available ) ?: 'none',
+					'unavailable' => implode( ',', $unavailable ) ?: 'none',
+				)
+			);
 		}
 	}
 
@@ -204,6 +223,8 @@ class ATI_Provider_Fluent_Forms implements ATI_Form_Provider_Interface {
 				'provider'      => $this->get_id(),
 				'form_id'       => $form_id,
 				'form_name'     => $form_name,
+				// event_id stabile per submission: dedup a prova di doppio scatto dell'hook.
+				'event_id'      => 'ff_' . (int) $entry_id,
 				'page_location' => isset( $_SERVER['HTTP_REFERER'] ) ? esc_url_raw( wp_unslash( $_SERVER['HTTP_REFERER'] ) ) : '',
 				'source'        => 'server_confirmed',
 			)
