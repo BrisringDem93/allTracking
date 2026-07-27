@@ -72,8 +72,10 @@ class ATI_GA4_Client_Context {
 			if ( 0 !== strpos( (string) $name, '_ga_' ) ) {
 				continue;
 			}
-			// GS1.1.<sessionId>.<sessionNumber>.<engaged>.<ts>...
-			if ( preg_match( '/^GS\d+\.\d+\.(\d+)\./', (string) $value, $m ) ) {
+			// Due formati noti (formato NON stabile, parsing difensivo):
+			// - GS1.1.<sessionId>.<sessionNumber>.<engaged>.<ts>...
+			// - GS2.1.s<sessionId>$o<n>$g<n>$t<ts>...   (con prefisso "s" e separatori "$")
+			if ( preg_match( '/^GS\d+\.\d+\.s?(\d+)/', (string) $value, $m ) ) {
 				return $m[1];
 			}
 		}

@@ -121,6 +121,21 @@ $_COOKIE = array( 'OptanonConsent' => 'groups=C0001:1,C0002:1,C0004:0' );
 ok( true === $detect->invoke( null ), 'OneTrust C0002:1 concede analytics' );
 $_COOKIE = array( 'OptanonConsent' => 'groups=C0001:1,C0002:0,C0004:1' );
 ok( false === $detect->invoke( null ), 'OneTrust solo marketing (C0004) NON concede analytics' );
+
+// iubenda con magic-quotes WordPress (virgolette escapate): deve comunque rilevare il consenso.
+$slashed = '{\"timestamp\":\"2026-06-05T15:12:56.954Z\",\"purposes\":{\"1\":true,\"2\":true,\"3\":true,\"4\":true,\"5\":true},\"id\":\"75332353\"}';
+$_COOKIE = array( '_iub_cs-75332353' => $slashed );
+ok( true === $detect->invoke( null ), 'iubenda con cookie slashato (magic-quotes WP) -> analytics rilevato (purpose 4)' );
+
+// iubenda con nome cookie con prefisso "s" (es. _iub_cs-s4597678).
+$slashed_s = '{\"purposes\":{\"1\":true,\"3\":true,\"4\":true,\"5\":true},\"id\":59733198}';
+$_COOKIE = array( '_iub_cs-s4597678' => $slashed_s );
+ok( true === $detect->invoke( null ), 'iubenda con nome cookie con prefisso "s" -> rilevato' );
+
+// iubenda con purpose 4 assente/false -> nessun consenso analytics.
+$slashed_no = '{\"purposes\":{\"1\":true,\"5\":true}}';
+$_COOKIE = array( '_iub_cs-99' => $slashed_no );
+ok( false === $detect->invoke( null ), 'iubenda senza purpose 4 -> analytics NON concesso' );
 $_COOKIE = array();
 
 // -------------------------------------------------------------------------
@@ -172,7 +187,12 @@ $_COOKIE = array(
 );
 $ctx = ATI_GA4_Client_Context::from_cookies();
 ok( '1234567890.1600000000' === $ctx['client_id'], 'client_id ricostruito da cookie _ga' );
-ok( '1699999999' === $ctx['session_id'], 'session_id ricostruito da cookie _ga_*' );
+ok( '1699999999' === $ctx['session_id'], 'session_id ricostruito da cookie _ga_* (formato GS1)' );
+// Formato GS2 reale: GS2.1.s<sessionId>$o1$g1$t...
+$_COOKIE = array( '_ga' => 'GA1.1.1886387798.1785148935', '_ga_0RVDVFM24W' => 'GS2.1.s1785148932$o1$g1$t1785152924$j60$l0$h0' );
+$ctx = ATI_GA4_Client_Context::from_cookies();
+ok( '1886387798.1785148935' === $ctx['client_id'], 'client_id da _ga reale' );
+ok( '1785148932' === $ctx['session_id'], 'session_id ricostruito da cookie _ga_* (formato GS2 con prefisso s/$)' );
 $_COOKIE = array();
 $ctx0 = ATI_GA4_Client_Context::from_cookies();
 ok( '' === $ctx0['client_id'] && '' === $ctx0['session_id'], 'Nessun cookie -> stringhe vuote (degrado esplicito)' );

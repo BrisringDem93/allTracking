@@ -102,6 +102,20 @@ class ATI_Consent_Service {
 	}
 
 	/**
+	 * Normalizza un valore di cookie letto da $_COOKIE in contesto WordPress.
+	 *
+	 * WordPress applica magic-quotes ai superglobali: le virgolette dei JSON dei CMP
+	 * arrivano escapate. wp_unslash() (o stripslashes come fallback fuori da WP) le
+	 * ripristina, così json_decode()/strpos() funzionano.
+	 *
+	 * @param string $value Valore grezzo del cookie.
+	 * @return string
+	 */
+	protected static function clean_cookie( $value ) {
+		return function_exists( 'wp_unslash' ) ? wp_unslash( $value ) : stripslashes( $value );
+	}
+
+	/**
 	 * Rileva il consenso analytics dai cookie dei CMP supportati.
 	 *
 	 * Segnali (categoria "statistiche/analytics", distinta da marketing):
@@ -126,23 +140,32 @@ class ATI_Consent_Service {
 		}
 
 		// iubenda: purpose "Measurement". L'indice è filtrabile perché varia tra configurazioni.
+		// IMPORTANTE: WordPress applica magic-quotes a $_COOKIE, quindi il JSON iubenda
+		// arriva con le virgolette escapate. Serve wp_unslash() prima di json_decode(),
+		// altrimenti il parsing fallisce e il consenso non viene rilevato.
 		$iub_purpose = (int) apply_filters( 'ati_iubenda_analytics_purpose', 4 );
+		$iub_names   = array( $iub_purpose, (string) $iub_purpose );
 		foreach ( $_COOKIE as $name => $value ) {
-			if ( preg_match( '/^_iub_cs-\d+$/', (string) $name ) ) {
-				$data = json_decode( urldecode( (string) $value ), true );
-				if ( is_array( $data ) && isset( $data['purposes'][ $iub_purpose ] ) && true === $data['purposes'][ $iub_purpose ] ) {
-					return true;
+			// iubenda usa sia nomi tutti-numerici sia con prefisso (es. _iub_cs-s4597678).
+			if ( 0 === strpos( (string) $name, '_iub_cs-' ) ) {
+				$data = json_decode( self::clean_cookie( (string) $value ), true );
+				if ( is_array( $data ) && isset( $data['purposes'] ) && is_array( $data['purposes'] ) ) {
+					foreach ( $iub_names as $key ) {
+						if ( isset( $data['purposes'][ $key ] ) && true === $data['purposes'][ $key ] ) {
+							return true;
+						}
+					}
 				}
 			}
 		}
 
 		// Cookiebot.
-		if ( isset( $_COOKIE['CookieConsent'] ) && false !== strpos( urldecode( (string) $_COOKIE['CookieConsent'] ), 'statistics:true' ) ) {
+		if ( isset( $_COOKIE['CookieConsent'] ) && false !== strpos( self::clean_cookie( (string) $_COOKIE['CookieConsent'] ), 'statistics:true' ) ) {
 			return true;
 		}
 
 		// OneTrust: C0002 = Performance/Analytics.
-		if ( isset( $_COOKIE['OptanonConsent'] ) && preg_match( '/(?:^|&)groups=([^&]*)/', urldecode( (string) $_COOKIE['OptanonConsent'] ), $m ) ) {
+		if ( isset( $_COOKIE['OptanonConsent'] ) && preg_match( '/(?:^|&)groups=([^&]*)/', self::clean_cookie( (string) $_COOKIE['OptanonConsent'] ), $m ) ) {
 			if ( false !== strpos( $m[1], 'C0002:1' ) ) {
 				return true;
 			}

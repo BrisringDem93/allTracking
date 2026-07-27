@@ -179,6 +179,17 @@ class ATI_GA4_REST {
 			'source'               => 'client_bridge',
 		);
 
+		if ( function_exists( 'ati_ga4_log' ) ) {
+			ati_ga4_log(
+				'rest_event_received',
+				array(
+					'event'   => $event,
+					'has_cid' => $context['client_id'] ? 1 : 0,
+					'has_sid' => $context['session_id'] ? 1 : 0,
+				)
+			);
+		}
+
 		$outcome = ati_track_confirmed_event( $event, $params, $context );
 
 		self::bump_rate_counter();

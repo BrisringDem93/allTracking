@@ -100,6 +100,9 @@ class ATI_Form_Provider_Registry {
 	 * @return void
 	 */
 	public static function notify_confirmed_lead( $provider, $form_id, array $params = array(), array $context = array() ) {
+		if ( function_exists( 'ati_ga4_log' ) ) {
+			ati_ga4_log( 'provider_hook_fired', array( 'provider' => (string) $provider, 'form_id' => (string) $form_id ) );
+		}
 		/**
 		 * Hook pubblico: un provider ha confermato un lead.
 		 *

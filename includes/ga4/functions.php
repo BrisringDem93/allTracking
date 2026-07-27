@@ -46,6 +46,19 @@ if ( ! function_exists( 'ati_track_confirmed_event' ) ) {
 		$event               = ATI_Event_Normalizer::normalize( $event_name, $params, $context );
 		$result['event_id']  = $event->event_id;
 
+		// Diagnostica d'ingresso (PII-free): utile per capire perché un evento non parte.
+		ati_ga4_log(
+			'confirmed_event_received',
+			array(
+				'event'    => $event->event_name,
+				'provider' => isset( $context['provider'] ) ? (string) $context['provider'] : '',
+				'source'   => $event->source,
+				'has_cid'  => $event->client_id ? 1 : 0,
+				'has_sid'  => $event->session_id ? 1 : 0,
+				'consent'  => $event->consent['analytics'] ? 1 : 0,
+			)
+		);
+
 		/**
 		 * Consente di bloccare un evento prima dell'invio.
 		 *
@@ -56,6 +69,7 @@ if ( ! function_exists( 'ati_track_confirmed_event' ) ) {
 		if ( ! $allowed ) {
 			$result['status'] = 'blocked';
 			$result['reason'] = 'filtered';
+			ati_ga4_log( 'confirmed_event_blocked', array( 'event' => $event->event_name ) );
 			return $result;
 		}
 
@@ -91,6 +105,7 @@ if ( ! function_exists( 'ati_track_confirmed_event' ) ) {
 		if ( ATI_Event_Deduplicator::is_duplicate( $event->event_id, $event->event_name, ATI_GA4_Adapter::DESTINATION ) ) {
 			$result['status'] = 'duplicate';
 			$result['reason'] = 'already_seen';
+			ati_ga4_log( 'confirmed_event_duplicate', array( 'event' => $event->event_name, 'id' => $event->event_id ) );
 			return $result;
 		}
 
@@ -98,10 +113,12 @@ if ( ! function_exists( 'ati_track_confirmed_event' ) ) {
 		if ( false === $enqueued ) {
 			$result['status'] = 'duplicate';
 			$result['reason'] = 'already_queued';
+			ati_ga4_log( 'confirmed_event_duplicate', array( 'event' => $event->event_name, 'id' => $event->event_id ) );
 			return $result;
 		}
 
 		$result['status'] = 'queued';
+		ati_ga4_log( 'confirmed_event_queued', array( 'event' => $event->event_name, 'id' => $event->event_id, 'queue_id' => (int) $enqueued ) );
 		return $result;
 	}
 }

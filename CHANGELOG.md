@@ -2,6 +2,28 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.8.2] - 2026-07-27 — Bugfix consenso iubenda / GA4
+
+### Corretto (bloccante)
+- **Consenso analytics iubenda non rilevato lato server** → GA4 non inviava nulla.
+  Causa: WordPress applica magic-quotes a `$_COOKIE`, quindi il JSON iubenda arriva con
+  le virgolette escapate e `json_decode()` falliva. Aggiunto `wp_unslash()`
+  (`clean_cookie()`) prima del parsing in `ATI_Consent_Service::detect_analytics_from_cmps()`.
+  Ora vengono riconosciuti anche i nomi cookie con prefisso (es. `_iub_cs-s4597678`).
+- **session_id non estratto dal cookie `_ga_*` in formato GS2**
+  (`GS2.1.s<sessionId>$...`). Regex aggiornata per GS1 e GS2.
+
+### Aggiunto
+- Debug PII-free potenziato: `confirmed_event_received` (event, provider, source,
+  has_cid, has_sid, consent), `confirmed_event_queued`/`duplicate`/`blocked`,
+  `provider_hook_fired` (Elementor/Fluent), `rest_event_received`.
+- Test: cookie iubenda slashato, nome con prefisso, purpose assente, session_id GS2 (58 asserzioni).
+
+### Nota (non modificato)
+- `ati_has_marketing_consent()` (percorso Meta/n8n, `tag-inserter.php`) ha lo stesso
+  problema di slash sul JSON iubenda lato server: NON toccato per non alterare il
+  comportamento Meta senza autorizzazione. Lato client il consenso marketing è corretto.
+
 ## [0.8.1] - 2026-07-24 — Hardening
 
 ### Corretto (bloccante)
