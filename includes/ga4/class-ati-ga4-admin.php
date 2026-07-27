@@ -69,6 +69,7 @@ class ATI_GA4_Admin {
 		register_setting( self::GROUP, 'ati_ga4_dedup_ttl', array( 'sanitize_callback' => 'absint' ) );
 		register_setting( self::GROUP, 'ati_ga4_enable_submit_attempt', $text );
 		register_setting( self::GROUP, 'ati_ga4_lead_trigger', array( 'sanitize_callback' => array( __CLASS__, 'sanitize_lead_trigger' ) ) );
+		register_setting( self::GROUP, 'ati_ga4_custom_success_event', $text );
 		register_setting( self::GROUP, 'ati_ga4_debug_mode', $text );
 		register_setting( self::GROUP, 'ati_analytics_cookie_name', $text );
 
@@ -353,6 +354,18 @@ class ATI_GA4_Admin {
 							<p class="description">
 								<strong>Provider server-side</strong>: massima affidabilità, ma richiede un hook PHP supportato dal plugin form.<br>
 								<strong>Invio form client-side</strong>: il bridge invia <code>generate_lead</code> all'invio di un qualsiasi form (utile con form/versioni non supportati). Legge comunque client_id/session_id reali e rispetta consenso e deduplica. Possibili falsi positivi su invii non riusciti. In questa modalità i provider server-side non emettono il lead (niente doppioni).
+							</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="ati_ga4_custom_success_event">Evento successo form custom</label></th>
+						<td>
+							<input name="ati_ga4_custom_success_event" type="text" id="ati_ga4_custom_success_event" value="<?php echo esc_attr( get_option( 'ati_ga4_custom_success_event', '' ) ); ?>" class="regular-text" placeholder="es: myFormSuccess" />
+							<p class="description">
+								Nome di un evento JavaScript emesso dai <strong>tuoi form custom</strong> all'invio riuscito. Vale sia per GA4 sia per Meta/n8n, indipendentemente dal "Trigger del lead".<br>
+								Il form deve emettere:
+								<code>document.dispatchEvent(new CustomEvent('myFormSuccess', { detail: { form_id: 'contatti', email: '...', phone: '...' } }))</code>.
+								<code>email</code>/<code>phone</code> (opzionali) servono all'Advanced Matching di Meta e <strong>non</strong> vengono inviati a GA4.
 							</p>
 						</td>
 					</tr>

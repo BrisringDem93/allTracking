@@ -118,6 +118,8 @@ function ati_ga4_enqueue_bridge() {
 		'submitAttempt' => ( '1' === get_option( 'ati_ga4_enable_submit_attempt', '0' ) ),
 		// Modalità "submit": il bridge invia generate_lead all'invio di un qualsiasi form.
 		'leadOnSubmit'  => ( 'submit' === ATI_GA4_Config::lead_trigger() ),
+		// Evento JS personalizzato per i form custom (invio riuscito).
+		'customSuccessEvent' => ATI_GA4_Config::custom_success_event(),
 		'debug'         => ( defined( 'WP_DEBUG' ) && WP_DEBUG ),
 		// Versione del PHP in esecuzione: visibile in "Visualizza sorgente" per
 		// verificare che il sito NON stia servendo codice vecchio dalla cache.

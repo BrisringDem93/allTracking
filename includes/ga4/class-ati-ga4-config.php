@@ -106,6 +106,17 @@ class ATI_GA4_Config {
 	}
 
 	/**
+	 * Nome di un evento JS personalizzato che segnala l'invio riuscito di un form
+	 * custom. Se impostato, il bridge (GA4) e il percorso Meta/n8n vi si agganciano.
+	 * Il form deve emettere: document.dispatchEvent(new CustomEvent(nome, {detail:{form_id, email, phone}})).
+	 *
+	 * @return string
+	 */
+	public static function custom_success_event() {
+		return trim( (string) get_option( 'ati_ga4_custom_success_event', '' ) );
+	}
+
+	/**
 	 * Politica quando manca il client_id: 'queue' (default) o 'discard'.
 	 *
 	 * @return string

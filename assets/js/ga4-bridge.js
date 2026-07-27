@@ -242,6 +242,27 @@
     }, false);
   }
 
+  // Evento JS personalizzato per i form custom (invio riuscito). Attivo appena è
+  // configurato, indipendentemente dalla modalità: è un segnale esplicito di successo.
+  // Il form custom deve emettere:
+  //   document.dispatchEvent(new CustomEvent('<nome>', { detail: { form_id: '...' } }))
+  if (CFG.customSuccessEvent) {
+    document.addEventListener(CFG.customSuccessEvent, function (e) {
+      var detail = e && e.detail ? e.detail : {};
+      var form = detail.form || (e && e.target && e.target.tagName === 'FORM' ? e.target : null);
+      // form_id da detail o dal form; niente PII nel payload GA4.
+      if (form) {
+        sendLead(form, 'custom_event');
+      } else {
+        // Nessun elemento form: l'evento custom è un segnale esplicito, invio diretto.
+        var formId = detail.form_id || detail.formId || '';
+        log('lead [custom_event]', formId || '(no id)');
+        window.atiGa4.trackConfirmedLead({ form_id: formId }, { form_id: formId });
+      }
+    }, false);
+    log('custom success event attivo:', CFG.customSuccessEvent);
+  }
+
   // Tentativo (OFF di default): NON è una conversione. Non emette generate_lead.
   if (CFG.submitAttempt) {
     document.addEventListener('submit', function (e) {

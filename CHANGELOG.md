@@ -2,6 +2,22 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.8.8] - 2026-07-27 — Lead Meta su invio riuscito + evento custom form
+
+### Corretto (Meta/n8n, su autorizzazione)
+- Il Lead Meta/n8n (`tag-inserter.php`) ora parte **solo su invio riuscito** per i form
+  con evento di successo affidabile (Fluent Forms `fluentform_submission_success`,
+  Contact Form 7 `wpcf7mailsent`): niente più Lead sui tentativi falliti. Email/telefono
+  per l'Advanced Matching vengono catturati al submit e usati alla conferma. Per gli altri
+  form il comportamento resta invariato (invio al submit).
+
+### Aggiunto
+- Impostazione **"Evento successo form custom"** (`ati_ga4_custom_success_event`): nome di
+  un evento JS che i form personalizzati emettono all'invio riuscito. Agganciato sia da
+  GA4 (bridge) sia da Meta/n8n. Contratto:
+  `document.dispatchEvent(new CustomEvent(nome, { detail: { form_id, email, phone } }))`.
+  `email`/`phone` (opzionali) vanno solo a Meta (Advanced Matching), mai a GA4.
+
 ## [0.8.7] - 2026-07-27 — Lead solo su invio riuscito + cache-bust bridge
 
 ### Corretto

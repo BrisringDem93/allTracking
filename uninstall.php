@@ -39,6 +39,7 @@ $options = array(
 	'ati_ga4_dedup_ttl',
 	'ati_ga4_enable_submit_attempt',
 	'ati_ga4_lead_trigger',
+	'ati_ga4_custom_success_event',
 	'ati_ga4_debug_mode',
 	'ati_ga4_form_map',
 	'ati_ga4_token_salt',
