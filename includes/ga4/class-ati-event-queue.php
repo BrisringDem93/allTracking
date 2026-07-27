@@ -319,6 +319,9 @@ class ATI_Event_Queue {
 					(int) $row['id']
 				)
 			); // phpcs:ignore WordPress.DB.PreparedSQL
+			if ( function_exists( 'ati_ga4_log' ) ) {
+				ati_ga4_log( 'event_sent', array( 'event' => $event->event_name, 'id' => $event->event_id, 'code' => isset( $send_result['code'] ) ? (int) $send_result['code'] : 0 ) );
+			}
 			do_action( 'ati_event_sent', $event, $destination );
 			return true;
 		}
@@ -333,6 +336,9 @@ class ATI_Event_Queue {
 					(int) $row['id']
 				)
 			); // phpcs:ignore WordPress.DB.PreparedSQL
+			if ( function_exists( 'ati_ga4_log' ) ) {
+				ati_ga4_log( 'event_discarded', array( 'event' => $event->event_name, 'id' => $event->event_id, 'reason' => $decision['reason_code'] ) );
+			}
 			/** Evento scartato definitivamente (es. missing_client_id). */
 			do_action( 'ati_event_discarded', $event, $decision['reason_code'] );
 			return false;
@@ -350,6 +356,9 @@ class ATI_Event_Queue {
 					(int) $row['id']
 				)
 			); // phpcs:ignore WordPress.DB.PreparedSQL
+			if ( function_exists( 'ati_ga4_log' ) ) {
+				ati_ga4_log( 'event_failed', array( 'event' => $event->event_name, 'id' => $event->event_id, 'error' => $decision['last_error'] ) );
+			}
 			do_action( 'ati_event_failed', $event, $decision['last_error'] );
 			return false;
 		}
@@ -419,6 +428,27 @@ class ATI_Event_Queue {
 			$counts[ $r['status'] ] = (int) $r['n'];
 		}
 		return $counts;
+	}
+
+	/**
+	 * Ultimi eventi in coda (per la diagnostica admin, senza PII).
+	 *
+	 * @param int $limit Numero massimo di righe.
+	 * @return array<int,array>
+	 */
+	public static function recent( $limit = 15 ) {
+		global $wpdb;
+		$table = self::table();
+		$limit = max( 1, min( 100, (int) $limit ) );
+		$rows  = $wpdb->get_results(
+			$wpdb->prepare(
+				"SELECT event_name, status, reason_code, attempts, event_id, updated_at, last_error
+				 FROM $table ORDER BY id DESC LIMIT %d",
+				$limit
+			),
+			ARRAY_A
+		); // phpcs:ignore WordPress.DB.PreparedSQL
+		return is_array( $rows ) ? $rows : array();
 	}
 
 	/**

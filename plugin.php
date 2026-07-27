@@ -2,7 +2,7 @@
 /**
  * Plugin Name: Quick Tracking Integration
  * Description: Inserisce automaticamente Facebook Pixel, Google Analytics 4 e Google Tag Manager con una semplice configurazione. GA4 "server-side first" per le conversioni confermate via Measurement Protocol.
- * Version: 0.8.9
+ * Version: 0.9.0
  * Author: Francesco de Minicis
  */
 
@@ -12,7 +12,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 
 // Versione coerente disponibile a runtime.
 if ( ! defined( 'ATI_PLUGIN_VERSION' ) ) {
-    define( 'ATI_PLUGIN_VERSION', '0.8.9' );
+    define( 'ATI_PLUGIN_VERSION', '0.9.0' );
 }
 
 // Include plugin files

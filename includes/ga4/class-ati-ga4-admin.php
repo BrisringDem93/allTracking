@@ -234,6 +234,7 @@ class ATI_GA4_Admin {
 		}
 		$counts     = ATI_Event_Queue::counts();
 		$discarded_reasons = ATI_Event_Queue::discarded_reasons();
+		$recent_events = ATI_Event_Queue::recent( 15 );
 		$consent_diag = ATI_Consent_Service::diagnostics();
 		$secret_set = ATI_GA4_Config::has_secret();
 		$secret_const = ATI_GA4_Config::secret_is_constant();
@@ -492,6 +493,28 @@ class ATI_GA4_Admin {
 				?>
 				</p>
 			<?php endif; ?>
+			<h3>Ultimi eventi</h3>
+			<p class="description">Fonte di verità della pipeline (indipendente dal file di log PHP). Aggiorna la pagina dopo un invio.</p>
+			<table class="widefat striped" style="max-width:900px">
+				<thead><tr><th>Evento</th><th>Stato</th><th>reason_code</th><th>tent.</th><th>event_id</th><th>aggiornato (UTC)</th></tr></thead>
+				<tbody>
+				<?php if ( empty( $recent_events ) ) : ?>
+					<tr><td colspan="6"><em>Nessun evento in coda. Se GA4 riceve comunque un <code>generate_lead</code>, non arriva dalla pipeline del plugin (probabile tag GA4 client-side in GTM).</em></td></tr>
+				<?php else : ?>
+					<?php foreach ( $recent_events as $ev ) : ?>
+						<tr>
+							<td><code><?php echo esc_html( $ev['event_name'] ); ?></code></td>
+							<td><strong><?php echo esc_html( $ev['status'] ); ?></strong></td>
+							<td><?php echo esc_html( $ev['reason_code'] ?: '—' ); ?></td>
+							<td><?php echo (int) $ev['attempts']; ?></td>
+							<td><code><?php echo esc_html( $ev['event_id'] ); ?></code></td>
+							<td><?php echo esc_html( $ev['updated_at'] ); ?></td>
+						</tr>
+					<?php endforeach; ?>
+				<?php endif; ?>
+				</tbody>
+			</table>
+
 			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="margin-top:10px">
 				<input type="hidden" name="action" value="ati_ga4_queue_action" />
 				<?php wp_nonce_field( self::NONCE ); ?>

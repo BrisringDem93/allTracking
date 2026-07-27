@@ -2,6 +2,16 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.9.0] - 2026-07-27 — Visibilità pipeline (log worker + tabella eventi)
+
+### Aggiunto
+- Log `[ATI GA4]` anche nel worker della coda: `event_sent`, `event_failed`,
+  `event_discarded` (prima l'invio a GA4 dal cron non lasciava traccia nel log).
+- Tabella **"Ultimi eventi"** nel pannello (evento, stato, reason_code, tentativi,
+  event_id, aggiornamento): fonte di verità della pipeline **indipendente** dal file di
+  log PHP (utile quando si consulta il log via FTP/snapshot). Se la tabella è vuota ma
+  GA4 riceve comunque un lead, l'evento non arriva dal plugin (probabile tag GTM client-side).
+
 ## [0.8.9] - 2026-07-27 — Fix doppio Lead Meta (Fluent emette il successo 2 volte)
 
 ### Corretto
