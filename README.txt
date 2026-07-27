@@ -2,7 +2,7 @@
 
 Un plugin WordPress che consente di installare rapidamente Facebook Pixel, Google Analytics 4 e Google Tag Manager senza toccare il codice.
 
-Versione: 0.9.1
+Versione: 0.9.0
 
 ## GA4 "server-side first" (conversioni confermate)
 

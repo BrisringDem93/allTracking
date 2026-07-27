@@ -58,12 +58,6 @@ if ( ! defined( 'ABSPATH' ) ) {
     exit;
 }
 
-// Protezione anti doppio-caricamento (vedi tag-inserter.php).
-if ( defined( 'ATI_SERVER_TRACKING_LOADED' ) ) {
-    return;
-}
-define( 'ATI_SERVER_TRACKING_LOADED', 1 );
-
 // ========================================
 // SEZIONE 1: AJAX HANDLER PER PAGEVIEW
 // ========================================
