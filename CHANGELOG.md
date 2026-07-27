@@ -2,6 +2,18 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.8.7] - 2026-07-27 — Lead solo su invio riuscito + cache-bust bridge
+
+### Corretto
+- Modalità "invio form client-side" ora conta il lead **solo su invio realmente
+  riuscito**, non sul submit grezzo (che scattava anche sui tentativi falliti):
+  - Fluent Forms → evento ufficiale `fluentform_submission_success`;
+  - Contact Form 7 → evento nativo `wpcf7mailsent`;
+  - form nativi non-AJAX → `submit` non prevenuto (invio reale);
+  - le AJAX form note vengono saltate dal submit grezzo (niente falsi positivi).
+- **Cache-bust del bridge JS**: la versione dello script ora è `ATI_PLUGIN_VERSION`
+  (prima fissa `1.0.0`), così il file si aggiorna a ogni release senza restare in cache.
+
 ## [0.8.6] - 2026-07-27 — Trigger lead client-side (compatibile con tutti i form)
 
 ### Aggiunto

@@ -196,18 +196,50 @@
     return (form && (form.getAttribute('data-form_id') || form.id || form.getAttribute('name'))) || '';
   }
 
-  // Modalità "invio form come lead" (opt-in): funziona con qualsiasi form.
-  // Invia generate_lead all'evento submit. Legge client_id/session_id dal Google Tag,
-  // rispetta consenso e deduplica lato server. Possibili falsi positivi su invii non
-  // riusciti: è un compromesso scelto esplicitamente in configurazione.
+  // Invia generate_lead per un form. Con debounce anti doppio-invio.
+  function sendLead(form, sourceLabel) {
+    if (debounced(form)) { log('lead ignorato (debounce)'); return; }
+    var formId = formIdOf(form);
+    log('lead [' + (sourceLabel || 'submit') + ']', formId || '(no id)');
+    window.atiGa4.trackConfirmedLead({ form_id: formId }, { form_id: formId });
+  }
+
+  // Riconosce i form gestiti via AJAX (che fanno preventDefault e hanno un evento di
+  // successo dedicato): per questi NON si conta il submit grezzo (eviterebbe i falsi
+  // positivi sugli invii falliti); si usa invece l'evento di successo.
+  function isAjaxForm(form) {
+    if (!form || typeof form.matches !== 'function') return false;
+    try {
+      return form.matches('.frm-fluent-form, [class*="fluent_form"], .elementor-form, .wpcf7-form, .wpforms-form, .gform_wrapper form, [data-form_id]');
+    } catch (e) { return false; }
+  }
+
+  // Modalità "invio form come lead" (opt-in): funziona con qualsiasi form, ma conta
+  // SOLO gli invii realmente riusciti (eventi di successo del provider), non i tentativi.
   if (CFG.leadOnSubmit) {
+    // 1) Fluent Forms: evento ufficiale che scatta SOLO su invio riuscito.
+    if (window.jQuery) {
+      try {
+        window.jQuery(document).on('fluentform_submission_success', function (e, data) {
+          var form = (data && data.form && data.form[0]) ? data.form[0] : (e && e.target) || null;
+          sendLead(form, 'fluent_success');
+        });
+      } catch (err) { log('jQuery hook non disponibile'); }
+    }
+
+    // 2) Contact Form 7: evento nativo di successo.
+    document.addEventListener('wpcf7mailsent', function (e) {
+      sendLead(e.target, 'cf7_success');
+    }, false);
+
+    // 3) Form nativi (non-AJAX): il submit non viene prevenuto -> invio reale.
+    //    Le AJAX form note vengono saltate (gestite dai loro eventi di successo).
     document.addEventListener('submit', function (e) {
       var form = e.target;
-      if (debounced(form)) { log('submit ignorato (debounce)'); return; }
-      var formId = formIdOf(form);
-      log('lead-on-submit', formId || '(no id)');
-      window.atiGa4.trackConfirmedLead({ form_id: formId }, { form_id: formId });
-    }, true);
+      if (isAjaxForm(form)) { log('submit AJAX form: atteso evento di successo'); return; }
+      if (e.defaultPrevented) { log('submit prevenuto: skip (nessun invio reale)'); return; }
+      sendLead(form, 'native_submit');
+    }, false);
   }
 
   // Tentativo (OFF di default): NON è una conversione. Non emette generate_lead.

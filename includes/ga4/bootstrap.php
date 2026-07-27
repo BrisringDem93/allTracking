@@ -106,7 +106,9 @@ function ati_ga4_enqueue_bridge() {
 	// __DIR__ = includes/ga4 ; la root del plugin è due livelli sopra.
 	$src    = plugins_url( 'assets/js/ga4-bridge.js', dirname( __DIR__, 2 ) . '/plugin.php' );
 
-	wp_register_script( $handle, $src, array(), '1.0.0', true );
+	// Versione = versione plugin: forza il cache-busting del bridge a ogni aggiornamento.
+	$asset_ver = defined( 'ATI_PLUGIN_VERSION' ) ? ATI_PLUGIN_VERSION : '1.0.0';
+	wp_register_script( $handle, $src, array(), $asset_ver, true );
 
 	$config = array(
 		'endpoint'      => rest_url( ATI_GA4_REST::NAMESPACE . ATI_GA4_REST::ROUTE ),
