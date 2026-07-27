@@ -122,6 +122,12 @@ class ATI_Form_Provider_Registry {
 		if ( function_exists( 'ati_ga4_log' ) ) {
 			ati_ga4_log( 'provider_hook_fired', array( 'provider' => (string) $provider, 'form_id' => (string) $form_id ) );
 		}
+
+		// In modalità "submit" il lead è generato dal bridge client-side: i provider
+		// server-side non emettono il lead per evitare doppioni.
+		if ( class_exists( 'ATI_GA4_Config' ) && 'submit' === ATI_GA4_Config::lead_trigger() ) {
+			return;
+		}
 		/**
 		 * Hook pubblico: un provider ha confermato un lead.
 		 *

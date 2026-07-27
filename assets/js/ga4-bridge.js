@@ -182,11 +182,39 @@
     }
   };
 
+  // Debounce per evitare doppi invii dallo stesso form (doppio click / re-submit).
+  var _lastSubmit = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  function debounced(form) {
+    if (!_lastSubmit || !form) return false;
+    var now = new Date().getTime();
+    var prev = _lastSubmit.get(form) || 0;
+    if (now - prev < 3000) return true;
+    _lastSubmit.set(form, now);
+    return false;
+  }
+  function formIdOf(form) {
+    return (form && (form.getAttribute('data-form_id') || form.id || form.getAttribute('name'))) || '';
+  }
+
+  // Modalità "invio form come lead" (opt-in): funziona con qualsiasi form.
+  // Invia generate_lead all'evento submit. Legge client_id/session_id dal Google Tag,
+  // rispetta consenso e deduplica lato server. Possibili falsi positivi su invii non
+  // riusciti: è un compromesso scelto esplicitamente in configurazione.
+  if (CFG.leadOnSubmit) {
+    document.addEventListener('submit', function (e) {
+      var form = e.target;
+      if (debounced(form)) { log('submit ignorato (debounce)'); return; }
+      var formId = formIdOf(form);
+      log('lead-on-submit', formId || '(no id)');
+      window.atiGa4.trackConfirmedLead({ form_id: formId }, { form_id: formId });
+    }, true);
+  }
+
   // Tentativo (OFF di default): NON è una conversione. Non emette generate_lead.
   if (CFG.submitAttempt) {
     document.addEventListener('submit', function (e) {
       var form = e.target;
-      var formId = (form && (form.id || form.getAttribute('name'))) || '';
+      var formId = formIdOf(form);
       window.atiGa4.trackSubmitAttempt({ form_id: formId }, { form_id: formId });
     }, true);
   }

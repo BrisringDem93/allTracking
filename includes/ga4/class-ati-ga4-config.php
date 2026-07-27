@@ -92,6 +92,20 @@ class ATI_GA4_Config {
 	}
 
 	/**
+	 * Trigger del lead confermato:
+	 * - 'server' (default): solo hook PHP ufficiali dei provider (Elementor/Fluent recenti);
+	 * - 'submit': il bridge client-side invia generate_lead all'invio del form (funziona
+	 *   con tutti i form, incluse versioni non supportate; possibili falsi positivi su
+	 *   invii non riusciti).
+	 *
+	 * @return string
+	 */
+	public static function lead_trigger() {
+		$mode = get_option( 'ati_ga4_lead_trigger', 'server' );
+		return ( 'submit' === $mode ) ? 'submit' : 'server';
+	}
+
+	/**
 	 * Politica quando manca il client_id: 'queue' (default) o 'discard'.
 	 *
 	 * @return string

@@ -2,6 +2,21 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.8.6] - 2026-07-27 — Trigger lead client-side (compatibile con tutti i form)
+
+### Aggiunto
+- Impostazione **"Trigger del lead"** (`ati_ga4_lead_trigger`):
+  - `server` (default): hook PHP ufficiali dei provider;
+  - `submit`: il bridge invia `generate_lead` all'invio di un **qualsiasi** form
+    (utile con form/versioni non supportate, es. Fluent Forms datato). Legge
+    client_id/session_id reali dal Google Tag, rispetta consenso e deduplica; con
+    debounce anti doppio-invio (3s). Possibili falsi positivi su invii non riusciti.
+- In modalità `submit`, i provider server-side **non** emettono il lead (nessun doppione).
+
+### Motivazione
+Su versioni datate di Fluent Forms l'hook `fluentform/submission_inserted` può non
+scattare: la modalità client-side garantisce copertura ampia e indipendente dal plugin form.
+
 ## [0.8.5] - 2026-07-27 — Diagnostica Fluent Forms
 
 ### Aggiunto

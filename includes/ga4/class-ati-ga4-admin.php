@@ -68,6 +68,7 @@ class ATI_GA4_Admin {
 		register_setting( self::GROUP, 'ati_ga4_missing_cid_policy', array( 'sanitize_callback' => array( __CLASS__, 'sanitize_policy' ) ) );
 		register_setting( self::GROUP, 'ati_ga4_dedup_ttl', array( 'sanitize_callback' => 'absint' ) );
 		register_setting( self::GROUP, 'ati_ga4_enable_submit_attempt', $text );
+		register_setting( self::GROUP, 'ati_ga4_lead_trigger', array( 'sanitize_callback' => array( __CLASS__, 'sanitize_lead_trigger' ) ) );
 		register_setting( self::GROUP, 'ati_ga4_debug_mode', $text );
 		register_setting( self::GROUP, 'ati_analytics_cookie_name', $text );
 
@@ -105,6 +106,14 @@ class ATI_GA4_Admin {
 	 */
 	public static function sanitize_policy( $v ) {
 		return ( 'discard' === $v ) ? 'discard' : 'queue';
+	}
+
+	/**
+	 * @param string $v Valore.
+	 * @return string
+	 */
+	public static function sanitize_lead_trigger( $v ) {
+		return ( 'submit' === $v ) ? 'submit' : 'server';
 	}
 
 	/**
@@ -332,6 +341,19 @@ class ATI_GA4_Admin {
 						<td>
 							<label><input type="checkbox" name="ati_ga4_server_pageview" value="1" <?php checked( get_option( 'ati_ga4_server_pageview', '0' ), '1' ); ?> /> Invia anche <code>page_view</code> dal server</label>
 							<div class="notice notice-warning inline"><p><strong>Rischio di duplicazione:</strong> il Google Tag invia già <code>page_view</code> dal browser. Lasciare disattivato salvo esigenze specifiche.</p></div>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row"><label for="ati_ga4_lead_trigger">Trigger del lead</label></th>
+						<td>
+							<select name="ati_ga4_lead_trigger" id="ati_ga4_lead_trigger">
+								<option value="server" <?php selected( get_option( 'ati_ga4_lead_trigger', 'server' ), 'server' ); ?>>Provider server-side (hook ufficiali: Elementor, Fluent recenti)</option>
+								<option value="submit" <?php selected( get_option( 'ati_ga4_lead_trigger', 'server' ), 'submit' ); ?>>Invio form client-side (funziona con tutti i form)</option>
+							</select>
+							<p class="description">
+								<strong>Provider server-side</strong>: massima affidabilità, ma richiede un hook PHP supportato dal plugin form.<br>
+								<strong>Invio form client-side</strong>: il bridge invia <code>generate_lead</code> all'invio di un qualsiasi form (utile con form/versioni non supportati). Legge comunque client_id/session_id reali e rispetta consenso e deduplica. Possibili falsi positivi su invii non riusciti. In questa modalità i provider server-side non emettono il lead (niente doppioni).
+							</p>
 						</td>
 					</tr>
 					<tr>
