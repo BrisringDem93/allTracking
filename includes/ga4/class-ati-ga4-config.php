@@ -82,6 +82,16 @@ class ATI_GA4_Config {
 	}
 
 	/**
+	 * debug_mode sugli invii di produzione (SOLO test: rende gli eventi server-side
+	 * visibili in GA4 DebugView). Spento di default.
+	 *
+	 * @return bool
+	 */
+	public static function debug_mode_enabled() {
+		return '1' === get_option( 'ati_ga4_debug_mode', '0' );
+	}
+
+	/**
 	 * Politica quando manca il client_id: 'queue' (default) o 'discard'.
 	 *
 	 * @return string

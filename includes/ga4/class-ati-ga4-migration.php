@@ -35,6 +35,7 @@ class ATI_GA4_Migration {
 			'ati_ga4_missing_cid_policy'    => 'queue',
 			'ati_ga4_dedup_ttl'             => (string) DAY_IN_SECONDS,
 			'ati_ga4_enable_submit_attempt' => '0',
+			'ati_ga4_debug_mode'            => '0',
 			'ati_analytics_cookie_name'     => '',
 			'ati_class_business_area'       => '',
 			'ati_class_service_type'        => '',

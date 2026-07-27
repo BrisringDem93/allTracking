@@ -118,7 +118,8 @@ class ATI_GA4_Adapter {
 		}
 
 		$url     = ATI_GA4_Endpoints::collect_url( $measurement_id, $api_secret );
-		$payload = self::build_payload( $event, false );
+		// debug_mode solo se l'admin lo attiva per i test (visibilità in GA4 DebugView).
+		$payload = self::build_payload( $event, ATI_GA4_Config::debug_mode_enabled() );
 
 		$response = wp_remote_post(
 			$url,

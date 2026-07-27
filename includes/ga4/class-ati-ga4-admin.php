@@ -68,6 +68,7 @@ class ATI_GA4_Admin {
 		register_setting( self::GROUP, 'ati_ga4_missing_cid_policy', array( 'sanitize_callback' => array( __CLASS__, 'sanitize_policy' ) ) );
 		register_setting( self::GROUP, 'ati_ga4_dedup_ttl', array( 'sanitize_callback' => 'absint' ) );
 		register_setting( self::GROUP, 'ati_ga4_enable_submit_attempt', $text );
+		register_setting( self::GROUP, 'ati_ga4_debug_mode', $text );
 		register_setting( self::GROUP, 'ati_analytics_cookie_name', $text );
 
 		register_setting( self::GROUP, 'ati_class_business_area', array( 'sanitize_callback' => array( 'ATI_Project_Classification', 'sanitize_slug' ) ) );
@@ -338,6 +339,13 @@ class ATI_GA4_Admin {
 						<td>
 							<label><input type="checkbox" name="ati_ga4_enable_submit_attempt" value="1" <?php checked( get_option( 'ati_ga4_enable_submit_attempt', '0' ), '1' ); ?> /> Abilita <code>form_submit_attempt</code> (NON è una conversione)</label>
 							<p class="description">Rappresenta un tentativo di invio, non un lead confermato. Non marcarlo come key event in GA4.</p>
+						</td>
+					</tr>
+					<tr>
+						<th scope="row">Debug DebugView</th>
+						<td>
+							<label><input type="checkbox" name="ati_ga4_debug_mode" value="1" <?php checked( get_option( 'ati_ga4_debug_mode', '0' ), '1' ); ?> /> Invia gli eventi con <code>debug_mode</code> (visibili in GA4 <strong>DebugView</strong>)</label>
+							<div class="notice notice-warning inline"><p><strong>Solo per test.</strong> Rende gli eventi server-side visibili in DebugView. Disattiva dopo la verifica: in produzione altera i dati di debug. Non ha effetto sull'anteprima di Google Tag Manager (che mostra solo gli eventi del browser).</p></div>
 						</td>
 					</tr>
 					<tr>
