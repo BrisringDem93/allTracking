@@ -74,7 +74,8 @@ class ATI_Consent_Service {
 		$providers = array();
 
 		foreach ( $_COOKIE as $name => $value ) {
-			if ( preg_match( '/^_iub_cs-\d+$/', (string) $name ) ) {
+			// iubenda usa nomi sia numerici sia con prefisso (es. _iub_cs-s4597678).
+			if ( 0 === strpos( (string) $name, '_iub_cs-' ) ) {
 				$providers[] = 'iubenda';
 				break;
 			}

@@ -158,7 +158,7 @@ function ati_settings_page() {
                                 let hasConsent = customCookie !== '' && cookie(customCookie) === 'allow';
                                 hasConsent = hasConsent || cookie('cmplz_marketing') === 'allow';
                                 try {
-                                    const iubendaMatch = document.cookie.match(/(?:^|; )_iub_cs-\d+=([^;]+)/);
+                                    const iubendaMatch = document.cookie.match(/(?:^|; )_iub_cs-[\w-]+=([^;]+)/);
                                     const iubenda = iubendaMatch ? JSON.parse(decodeURIComponent(iubendaMatch[1])) : null;
                                     hasConsent = hasConsent || !!(iubenda && (iubenda.consent === true || (iubenda.purposes && iubenda.purposes[5] === true)));
                                 } catch (e) {}
