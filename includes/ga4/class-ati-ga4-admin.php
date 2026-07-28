@@ -1,9 +1,11 @@
 <?php
 /**
- * ATI_GA4_Admin — Pagina di amministrazione GA4 server-side.
+ * ATI_GA4_Admin — Tab "GA4 Server-Side" della pagina settings unificata.
  *
  * Gestisce: configurazione GA4 server, classificazione del progetto, mapping form,
  * API secret mascherato (mai esposto), test di validazione, diagnostica coda.
+ * Il contenuto è renderizzato come tab dentro la pagina "Tracking Integration"
+ * (settings-page.php); il vecchio slug ati-ga4-settings viene rediretto al tab.
  *
  * @package QuickTrackingIntegration\GA4
  */
@@ -17,9 +19,9 @@ if ( ! defined( 'ABSPATH' ) ) {
  */
 class ATI_GA4_Admin {
 
-	const GROUP    = 'ati_ga4_settings';
-	const PAGE     = 'ati-ga4-settings';
-	const NONCE    = 'ati_ga4_admin';
+	const GROUP       = 'ati_ga4_settings';
+	const LEGACY_PAGE = 'ati-ga4-settings';
+	const NONCE       = 'ati_ga4_admin';
 
 	/**
 	 * Aggancia gli hook admin.
@@ -27,28 +29,32 @@ class ATI_GA4_Admin {
 	 * @return void
 	 */
 	public static function boot() {
-		add_action( 'admin_menu', array( __CLASS__, 'add_menu' ) );
 		add_action( 'admin_init', array( __CLASS__, 'register_settings' ) );
+		add_action( 'admin_init', array( __CLASS__, 'maybe_redirect_legacy_page' ) );
 		add_action( 'wp_ajax_ati_ga4_test_config', array( __CLASS__, 'ajax_test_config' ) );
 		add_action( 'admin_post_ati_ga4_queue_action', array( __CLASS__, 'handle_queue_action' ) );
 	}
 
 	/**
-	 * Menu.
+	 * URL del tab GA4 nella pagina settings unificata.
+	 *
+	 * @return string
+	 */
+	public static function tab_url() {
+		return admin_url( 'options-general.php?page=ati-settings&tab=ga4' );
+	}
+
+	/**
+	 * Redirige il vecchio slug pagina (ati-ga4-settings) al tab GA4 della pagina
+	 * unificata, per link/bookmark salvati prima dell'unificazione dei menu.
 	 *
 	 * @return void
 	 */
-	public static function add_menu() {
-		if ( ! current_user_can( 'manage_options' ) ) {
-			return;
+	public static function maybe_redirect_legacy_page() {
+		if ( isset( $_GET['page'] ) && self::LEGACY_PAGE === $_GET['page'] ) { // phpcs:ignore WordPress.Security.NonceVerification
+			wp_safe_redirect( self::tab_url() );
+			exit;
 		}
-		add_options_page(
-			'GA4 Server-Side',
-			'GA4 Server-Side',
-			'manage_options',
-			self::PAGE,
-			array( __CLASS__, 'render' )
-		);
 	}
 
 	/**
@@ -224,11 +230,12 @@ class ATI_GA4_Admin {
 	}
 
 	/**
-	 * Rende la pagina admin.
+	 * Rende il contenuto del tab "GA4 Server-Side" (dentro il wrap della pagina
+	 * settings unificata: nessun div.wrap/h1 proprio).
 	 *
 	 * @return void
 	 */
-	public static function render() {
+	public static function render_tab() {
 		if ( ! current_user_can( 'manage_options' ) ) {
 			return;
 		}
@@ -244,9 +251,6 @@ class ATI_GA4_Admin {
 		$map[]      = array();
 		$ver = self::version_status();
 		?>
-		<div class="wrap">
-			<h1>GA4 Server-Side</h1>
-
 			<h2>Stato / versione attiva</h2>
 			<p class="description">Utile per verificare che il sito stia eseguendo il codice aggiornato (e non una versione in cache/OPcache).</p>
 			<table class="widefat" style="max-width:760px">
@@ -549,7 +553,6 @@ class ATI_GA4_Admin {
 				});
 			})();
 			</script>
-		</div>
 		<?php
 	}
 
@@ -644,7 +647,7 @@ class ATI_GA4_Admin {
 				break;
 		}
 
-		wp_safe_redirect( add_query_arg( array( 'page' => self::PAGE, 'ati_queue' => $op ), admin_url( 'options-general.php' ) ) );
+		wp_safe_redirect( add_query_arg( 'ati_queue', $op, self::tab_url() ) );
 		exit;
 	}
 }

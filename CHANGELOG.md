@@ -2,6 +2,26 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.10.0] - 2026-07-28 — Pagina settings unificata a tab + credenziali Meta per n8n
+
+### Modificato
+- **Menu unificato**: le due pagine "Tracking Integration" e "GA4 Server-Side" sono ora
+  un'unica pagina a tab (Generale / Server-Side (n8n & Meta) / GA4 Server-Side) sotto
+  un'unica voce di menu. Il vecchio slug `ati-ga4-settings` viene rediretto al tab GA4
+  (link/bookmark salvati continuano a funzionare). Nessuna opzione è stata rinominata.
+- Le impostazioni n8n (`ati_server_endpoint`, `ati_server_auth_key`,
+  `ati_server_auth_value`) sono state spostate nel settings group dedicato
+  `ati_server_settings` (stesso nome opzione, valori conservati): ogni tab salva solo
+  le proprie opzioni.
+
+### Aggiunto
+- **Credenziali Meta CAPI nel tab Server-Side**: campi `ati_meta_dataset_id`
+  (Pixel/Dataset ID, fallback sul Facebook Pixel ID client-side) e
+  `ati_meta_capi_token` (access token, mascherato: mai renderizzato in HTML, stessa
+  logica dell'API Secret GA4). Se impostati vengono inclusi nel payload inviato a n8n
+  come `pixel_id` e `access_token` accanto a `data`: il workflow n8n li legge dalla
+  richiesta e non deve più tenerli hardcodati.
+
 ## [0.9.0] - 2026-07-27 — Visibilità pipeline (log worker + tabella eventi)
 
 ### Aggiunto

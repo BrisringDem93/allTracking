@@ -27,6 +27,8 @@ $options = array(
 	'ati_server_endpoint',
 	'ati_server_auth_key',
 	'ati_server_auth_value',
+	'ati_meta_dataset_id',
+	'ati_meta_capi_token',
 	// GA4 server-side.
 	'ati_ga4_server_id',
 	'ati_enable_ga4_server',

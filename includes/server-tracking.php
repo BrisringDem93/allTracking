@@ -499,7 +499,10 @@ function fst_get_uid() {
  * - ati_server_endpoint: URL del webhook n8n
  * - ati_server_auth_key: Nome header autenticazione (opzionale)
  * - ati_server_auth_value: Valore header autenticazione (opzionale)
- * 
+ * - ati_meta_dataset_id: Pixel/Dataset ID Meta incluso nel payload (opzionale,
+ *   fallback su ati_fb_pixel_id)
+ * - ati_meta_capi_token: Access token Meta CAPI incluso nel payload (opzionale)
+ *
  * @param array $payload Dati evento formattati per Facebook API
  * @return void
  * @since 1.1
@@ -510,7 +513,22 @@ function fst_send_to_n8n( array $payload ) {
     if ( ! $endpoint ) {
         return; // Se non configurato, esce silenziosamente
     }
-    
+
+    // STEP 1b: Credenziali Meta CAPI opzionali. Se configurate viaggiano nel
+    // payload (accanto a "data", stesso formato del body della Graph API):
+    // il workflow n8n le legge dalla richiesta invece di tenerle hardcodate.
+    $dataset_id = trim( (string) get_option( 'ati_meta_dataset_id', '' ) );
+    if ( '' === $dataset_id ) {
+        $dataset_id = trim( (string) get_option( 'ati_fb_pixel_id', '' ) ); // Fallback: pixel client-side.
+    }
+    $capi_token = trim( (string) get_option( 'ati_meta_capi_token', '' ) );
+    if ( '' !== $dataset_id ) {
+        $payload['pixel_id'] = $dataset_id;
+    }
+    if ( '' !== $capi_token ) {
+        $payload['access_token'] = $capi_token;
+    }
+
     // STEP 2: Configura autenticazione (se necessaria)
     $auth_key = trim( get_option( 'ati_server_auth_key', '' ) );   // Nome header (es: "X-API-Key")
     $auth_val = trim( get_option( 'ati_server_auth_value', '' ) ); // Valore header (es: "abc123")

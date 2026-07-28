@@ -21,7 +21,7 @@ Punti chiave:
   validazione, API Secret mai esposto.
 - Meta Pixel / Meta Conversions API / n8n **restano invariati**.
 
-Configurazione: **Impostazioni → GA4 Server-Side**. Guida completa in
+Configurazione: **Impostazioni → Tracking Integration → tab "GA4 Server-Side"**. Guida completa in
 `docs/ga4-configuration.md`; audit e razionale in `docs/ga4-server-side-audit.md`;
 matrice di test in `docs/ga4-test-matrix.md`. Le nuove funzionalità sono **disattivate di
 default** dopo l'aggiornamento e vanno abilitate dall'amministratore.

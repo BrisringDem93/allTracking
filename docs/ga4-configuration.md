@@ -6,7 +6,9 @@ per page_view, sessioni, client_id, session_id, Consent Mode e misurazione avanz
 
 ## 1. Configurazione nel pannello WordPress
 
-Pagina: **Impostazioni → GA4 Server-Side** (`options-general.php?page=ati-ga4-settings`).
+Pagina: **Impostazioni → Tracking Integration → tab "GA4 Server-Side"**
+(`options-general.php?page=ati-settings&tab=ga4`). Il vecchio slug
+`ati-ga4-settings` viene rediretto automaticamente al tab.
 
 1. **Measurement ID (server)** — normalmente lo stesso `G-XXXXXXXXXX` del Google Tag web.
    Se lasciato vuoto viene usato il Measurement ID client.
