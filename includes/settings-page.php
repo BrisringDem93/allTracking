@@ -31,6 +31,7 @@ function ati_register_settings() {
     register_setting( 'ati_settings', 'ati_enable_form_fields', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => '1' ) );
     register_setting( 'ati_settings', 'ati_consent_cookie_name', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ) );
     register_setting( 'ati_settings', 'ati_consent_custom_event', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ) );
+    register_setting( 'ati_settings', ATI_Debug_Bar::OPTION_MODE, array( 'sanitize_callback' => 'ati_sanitize_debug_bar_mode', 'default' => ATI_Debug_Bar::MODE_DEFAULT ) );
 
     // --- Tab "Server-Side (n8n & Meta)" (gruppo ati_server_settings) ---
     register_setting( 'ati_server_settings', 'ati_server_endpoint', array( 'sanitize_callback' => 'esc_url_raw' ) );
@@ -70,6 +71,17 @@ function ati_sanitize_meta_capi_token( $value ) {
     }
 
     return sanitize_text_field( $value );
+}
+
+/**
+ * Sanitizza la modalità del widget di debug del front-end.
+ *
+ * @param string $value Valore inviato.
+ * @return string auto|always|off
+ */
+function ati_sanitize_debug_bar_mode( $value ) {
+    $value = sanitize_key( $value );
+    return array_key_exists( $value, ATI_Debug_Bar::mode_labels() ) ? $value : ATI_Debug_Bar::MODE_DEFAULT;
 }
 
 /**
@@ -213,6 +225,28 @@ function ati_render_general_tab() {
                         la classe <code>ati-field-fbclid</code> e l'attributo <code>data-ati-field="fbclid"</code>.
                         I campi già valorizzati non vengono sovrascritti; se un valore non è disponibile il campo resta vuoto
                         (<code>fbp</code> richiede il cookie <code>_fbp</code> del Pixel, quindi il consenso marketing).
+                    </p>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row"><label for="ati_debug_bar_mode"><?php esc_html_e( 'Widget di debug (front-end)', 'ati' ); ?></label></th>
+                <td>
+                    <select name="<?php echo esc_attr( ATI_Debug_Bar::OPTION_MODE ); ?>" id="ati_debug_bar_mode">
+                        <?php foreach ( ATI_Debug_Bar::mode_labels() as $ati_mode_value => $ati_mode_label ) : ?>
+                            <option value="<?php echo esc_attr( $ati_mode_value ); ?>" <?php selected( ATI_Debug_Bar::mode(), $ati_mode_value ); ?>><?php echo esc_html( $ati_mode_label ); ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                    <p class="description">
+                        Pannello a schermo sul sito con consenso rilevato, cookie presenti, cookie che dovrebbero o non dovrebbero esserci,
+                        stato del blocco cookie, dei tag e della coda GA4. È di <strong>sola lettura</strong> e viene stampato solo per gli
+                        utenti loggati con permessi di amministrazione: i visitatori non lo vedono mai.
+                        <?php if ( ! ( defined( 'WP_DEBUG' ) && WP_DEBUG ) ) : ?>
+                            <br /><strong>WP_DEBUG è disattivato:</strong> con «Automatico» il widget non compare.
+                        <?php endif; ?>
+                        <?php if ( defined( 'ATI_DEBUG_BAR' ) ) : ?>
+                            <br /><strong>La costante <code>ATI_DEBUG_BAR</code> è definita
+                            (<?php echo esc_html( ATI_DEBUG_BAR ? 'true' : 'false' ); ?>)</strong> e ha la precedenza su questa impostazione.
+                        <?php endif; ?>
                     </p>
                 </td>
             </tr>

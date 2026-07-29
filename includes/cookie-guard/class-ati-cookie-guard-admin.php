@@ -342,6 +342,14 @@ class ATI_Cookie_Guard_Admin {
 			<a href="<?php echo esc_url( admin_url( 'options-general.php?page=ati-settings&tab=ga4' ) ); ?>">GA4 Server-Side</a>:
 			il blocco cookie riusa quelle impostazioni, senza duplicarle.
 		</p>
+		<?php if ( class_exists( 'ATI_Debug_Bar' ) && ATI_Debug_Bar::debug_enabled() ) : ?>
+			<p class="description">
+				💡 Le stesse informazioni — più i cookie <strong>attesi</strong> e quelli che non dovrebbero esserci — sono disponibili
+				<strong>mentre navighi il sito</strong>: il <em>widget di debug</em> in basso a destra sul front-end. Si configura nel tab
+				<a href="<?php echo esc_url( admin_url( 'options-general.php?page=ati-settings&tab=general' ) ); ?>">Generale</a> e lo vedi
+				solo tu, non i visitatori.
+			</p>
+		<?php endif; ?>
 
 		<hr />
 		<h2>Cookie presenti ora</h2>

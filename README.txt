@@ -2,7 +2,7 @@
 
 Un plugin WordPress che consente di installare rapidamente Facebook Pixel, Google Analytics 4 e Google Tag Manager senza toccare il codice.
 
-Versione: 0.12.0
+Versione: 0.13.0
 
 ## GA4 "server-side first" (conversioni confermate)
 
@@ -227,6 +227,63 @@ altri siti e nessuno script di questo sito può leggerli o cancellarli.
 
 Test: `php tests/cookie-guard-tests.php` (motore di regole PHP) e
 `node tests/cookie-guard-tests.js` (guard nel browser, con DOM simulato).
+
+## Widget di debug sul front-end
+
+Dalla 0.13.0, con `WP_DEBUG` attivo, chi è **loggato come amministratore** vede sul sito un
+pannello richiudibile in basso a destra (`🍪 Tracking debug`) che risponde alla domanda
+«questo cookie ci dovrebbe essere o no?» senza aprire i DevTools. Il badge sul pulsante
+conta i problemi rilevati. I visitatori non lo vedono **mai**: non compare per gli utenti
+anonimi, né in admin, AJAX, REST, cron, feed o embed.
+
+| Scheda | Cosa mostra |
+| --- | --- |
+| **Consenso** | Consenso per categoria visto dal server e dal browser in tempo reale, CMP configurato e CMP realmente rilevati, valore dei cookie di consenso personalizzati |
+| **Cookie** | Ogni cookie leggibile da JavaScript con l'esito che ha con le regole attive, categoria e regola; in coda i cookie ricevuti **solo dal server** (`HttpOnly`, terze parti) |
+| **Attesi** | Esito **atteso** per ciascun cookie del plugin (`deve esserci` / `non deve esserci` / `dipende`) confrontato con la realtà, con la motivazione |
+| **Blocco** | Modalità del blocco cookie, se sta davvero agendo su questa richiesta, regole attive, e i contatori reali di scritture bloccate e cookie cancellati |
+| **Tag & GA4** | Tag configurati, cosa è realmente caricato (`dataLayer`, `gtag`, `fbq`, bridge GA4), pipeline GA4 server-side (`client_id`/`session_id`, coda, worker), n8n e Meta CAPI come sola presenza |
+
+Un cookie **presente che non dovrebbe esserci** viene segnalato come errore; uno **atteso e
+assente** come avviso. «dipende» significa che entrambi gli esiti sono legittimi (il cookie
+lo decide il container GTM, manca un `fbclid`, l'evento non è ancora stato inviato).
+
+Il pulsante **Copia JSON** mette negli appunti la fotografia completa (server + browser),
+pronta da incollare in un ticket.
+
+Il widget è di **sola lettura**: non scrive cookie, non invia eventi, non modifica il
+tracking. Non contiene segreti — API Secret GA4, token CAPI, header di autenticazione e
+path del webhook n8n non vengono mai inviati al browser, solo il flag «impostato» — e il
+server non manda alcun valore di cookie, solo i nomi.
+
+Gli esiti sono calcolati dallo **stesso** `assets/js/cookie-guard.js` che gira sul sito
+(caricato con `mode=off` quando il blocco non è attivo sulla richiesta, quindi senza
+installare nulla): non possono divergere dal comportamento reale. Attenzione però al caso
+tipico — il blocco è escluso per gli utenti loggati, quindi su quella pagina *non sta
+bloccando nulla* e gli esiti sono una simulazione: il pannello lo dichiara e invita a
+verificare in navigazione anonima.
+
+Controllo: **Impostazioni → Tracking Integration → Generale → «Widget di debug
+(front-end)»** con `Automatico` (default, solo con `WP_DEBUG`), `Sempre` o `Mai`. In
+`wp-config.php` la costante `ATI_DEBUG_BAR` ha la precedenza su tutto:
+
+```php
+define( 'ATI_DEBUG_BAR', true );  // forza il widget anche senza WP_DEBUG
+define( 'ATI_DEBUG_BAR', false ); // lo spegne in ogni caso
+```
+
+Per mostrarlo a qualunque utente loggato (per default serve `manage_options`):
+
+```php
+add_filter( 'ati_debug_bar_capability', function () { return 'read'; } );
+```
+
+Dalla console del browser le stesse informazioni sono interrogabili con
+`atiDebugBarApi` (sola lettura): `.cookies()`, `.consent()`, `.evaluate('_ga')`,
+`.compare(riga, presenti)`, `.problems(presenti)`.
+
+Test: `php tests/debug-bar-tests.php` (attese e diagnostica, logica pura) e
+`node tests/debug-bar-tests.js` (confronto atteso/reale nel browser, DOM simulato).
 
 ## Installazione
 

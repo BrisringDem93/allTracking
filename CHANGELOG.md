@@ -2,6 +2,67 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.13.0] - 2026-07-29 — Widget di debug del tracking sul front-end
+
+### Aggiunto
+- **Widget di diagnostica a schermo** (`includes/debug-bar/`, `assets/js/debug-bar.js`):
+  pannello richiudibile in basso a destra, visibile **solo a un utente loggato con
+  permessi di amministrazione e solo con `WP_DEBUG` attivo**. Risponde alla domanda
+  «questo cookie ci dovrebbe essere o no?» senza aprire i DevTools. Cinque schede:
+  - **Consenso** — stato per categoria affiancato lato *server* (cookie della richiesta) e
+    lato *browser in tempo reale*, CMP configurato e CMP realmente rilevati nelle due
+    viste, valore dei cookie di consenso personalizzati. Si aggiorna sugli eventi dei CMP
+    supportati, senza ricaricare la pagina.
+  - **Cookie** — tutti i cookie leggibili da JavaScript con l'esito che hanno con le regole
+    attive (allowlist / consentito / da bloccare / da cancellare), categoria e regola che
+    li colpisce; in coda i cookie ricevuti **solo dal server** (`HttpOnly` e di terze
+    parti), che JavaScript non può vedere.
+  - **Attesi** — per ogni cookie del plugin l'esito **atteso** in base alla configurazione
+    e al consenso (`deve esserci` / `non deve esserci` / `dipende`), confrontato con la
+    realtà: un cookie presente che non dovrebbe esserci viene segnalato come errore, uno
+    atteso e assente come avviso, con la motivazione in chiaro.
+  - **Blocco** — modalità del blocco cookie, se sta davvero agendo su questa richiesta,
+    regole attive, pulizia lato server, passate periodiche e contatori reali di scritture
+    bloccate e cookie cancellati nella pagina corrente.
+  - **Tag & GA4** — tag client-side configurati, cosa è realmente caricato nella pagina
+    (`dataLayer`, `gtag`, `fbq`, bridge GA4, script dei campi hidden), stato della pipeline
+    GA4 server-side (`client_id`/`session_id` reali, conteggi della coda, prossimo worker)
+    ed endpoint n8n / credenziali Meta CAPI come **sola presenza**.
+- Pulsante **Copia JSON**: fotografia completa (server + browser) negli appunti, pronta da
+  incollare in un ticket. Nessun segreto: API Secret GA4, token CAPI, header di
+  autenticazione e path del webhook n8n non vengono mai inviati al browser — solo flag di
+  presenza — e del webhook si mostra il solo host.
+- Nuova impostazione **«Widget di debug (front-end)»** nel tab *Generale*:
+  `Automatico` (default, solo con `WP_DEBUG`), `Sempre`, `Mai`. La costante
+  `ATI_DEBUG_BAR` in `wp-config.php` ha la precedenza su tutto (`true` forza il widget
+  anche senza `WP_DEBUG`, `false` lo spegne in ogni caso).
+- `tests/debug-bar-tests.php` (56 test sulla logica pura delle attese e della
+  diagnostica): derivazione del cookie di sessione GA4 dal Measurement ID, attese per
+  ciascun cookie in funzione di tag attivi / consenso / GTM / «disattiva per utenti
+  loggati», tag spuntato senza ID, e segnalazioni (CMP assente, blocco escluso per i
+  loggati, regole a zero, GA4 server-side incompleto, coda in errore).
+- `tests/debug-bar-tests.js` (24 test, `window`/`document` simulati) sul confronto
+  atteso/reale nel browser: match esatto e per prefisso, classificazione dell'esito,
+  isolamento dei cookie visibili solo al server e conteggio dei problemi **senza
+  doppioni** (un cookie bloccato dalle regole e già segnalato dalle attese è un problema,
+  non due). Le funzioni sono esposte in sola lettura su `window.atiDebugBarApi`, quindi
+  interrogabili anche dalla console del browser.
+- Filtri: `ati_debug_bar_visible`, `ati_debug_bar_capability` (per default
+  `manage_options`; con `read` il widget è visibile a qualunque utente loggato),
+  `ati_debug_expected_cookies`, `ati_debug_notices`.
+
+### Sicurezza
+- Il widget è di **sola lettura**: non scrive cookie, non invia eventi, non altera il
+  tracking. Non viene stampato per i visitatori anonimi, quindi non può modificare quello
+  che vede un utente finale, e non compare in admin, AJAX, REST, cron, feed ed embed.
+- Il motore di valutazione **non è duplicato**: il widget usa `atiCookieGuardApi`, esposto
+  dallo stesso `assets/js/cookie-guard.js` del front-end. Quando il blocco non è attivo
+  sulla richiesta (caso tipico: escluso per gli utenti loggati) il motore viene caricato
+  con `mode=off`, che non installa nulla — e il pannello dichiara che gli esiti sono una
+  simulazione, invitando a verificare in navigazione anonima.
+- Nessun valore di cookie viene inviato dal server: la fotografia contiene solo nomi,
+  esiti e flag. I valori mostrati nella scheda Consenso sono letti nel browser e troncati.
+
 ## [0.12.0] - 2026-07-29 — Blocco dei cookie senza consenso
 
 ### Aggiunto
