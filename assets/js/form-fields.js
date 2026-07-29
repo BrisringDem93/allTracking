@@ -16,8 +16,11 @@
  * - Riempie più volte: al load, sui form aggiunti dopo (AJAX/popup/multistep),
  *   al cambio di consenso e — soprattutto — in fase di capture del submit, quando
  *   i cookie `_fbp`/`_fbc` possono essere comparsi dopo l'accettazione del banner.
- * - Persistenza click id: sessionStorage sempre (continuità tra pagine nella stessa
- *   sessione), cookie 90 giorni SOLO con consenso marketing.
+ * - NESSUNO storage senza consenso marketing: né cookie né sessionStorage, né in
+ *   lettura né in scrittura. Con consenso i click id vengono memorizzati (cookie
+ *   `fst_clid` 90 giorni + sessionStorage) per restare disponibili nelle pagine
+ *   successive; senza consenso restano solo in memoria, quindi i campi si compilano
+ *   con quanto è nell'URL della pagina corrente (tipicamente la landing col form).
  * - Fallisce in modo controllato: nessun errore blocca l'invio del form.
  *
  * Config iniettata da PHP in window.atiFormFields:
@@ -110,7 +113,8 @@
   // PERSISTENZA CLICK ID
   // ========================================
 
-  var _store = null;
+  var _store = {};
+  var _hydrated = false;
 
   function sessionGet(key) {
     try { return window.sessionStorage.getItem(key) || ''; } catch (e) { return ''; }
@@ -120,16 +124,20 @@
     try { window.sessionStorage.setItem(key, value); } catch (e) { /* quota/privacy mode */ }
   }
 
+  // Legge lo storage UNA SOLA volta e solo con consenso. I valori già in memoria
+  // (catturati dall'URL della pagina corrente) sono i più recenti e non vengono
+  // sovrascritti; tra le due fonti la sessione è più recente del cookie.
   function readStore() {
-    if (_store) return _store;
-    _store = {};
-    // Il cookie è la fonte più vecchia, la sessione quella più recente: la sessione vince.
-    var sources = [parseJson(cookie(STORE_KEY)), parseJson(sessionGet(STORE_KEY))];
+    if (_hydrated || !hasMarketingConsent()) {
+      return _store;
+    }
+    _hydrated = true;
+    var sources = [parseJson(sessionGet(STORE_KEY)), parseJson(cookie(STORE_KEY))];
     for (var i = 0; i < sources.length; i++) {
       var src = sources[i];
       if (!src) continue;
       for (var k in src) {
-        if (Object.prototype.hasOwnProperty.call(src, k) && src[k]) {
+        if (Object.prototype.hasOwnProperty.call(src, k) && src[k] && !_store[k]) {
           _store[k] = String(src[k]);
         }
       }
@@ -138,16 +146,24 @@
   }
 
   function persistStore() {
-    var raw;
-    try { raw = JSON.stringify(_store || {}); } catch (e) { return; }
-    sessionSet(STORE_KEY, raw);
-    // Persistenza lunga solo con consenso marketing (stessa regola di fst_uid).
-    if (hasMarketingConsent()) {
-      try {
-        document.cookie = STORE_KEY + '=' + encodeURIComponent(raw) +
-          '; path=/; max-age=' + STORE_MAX_AGE + '; SameSite=Lax';
-      } catch (e) { /* noop */ }
+    // Nessuna scrittura senza consenso: i click id restano solo in memoria.
+    if (!hasMarketingConsent()) {
+      return;
     }
+    var raw;
+    try { raw = JSON.stringify(_store); } catch (e) { return; }
+    sessionSet(STORE_KEY, raw);
+    try {
+      document.cookie = STORE_KEY + '=' + encodeURIComponent(raw) +
+        '; path=/; max-age=' + STORE_MAX_AGE + '; SameSite=Lax';
+    } catch (e) { /* noop */ }
+  }
+
+  // Riallinea memoria e storage: usata anche dopo l'accettazione del banner, quando
+  // la lettura diventa lecita e i valori in memoria vanno persistiti.
+  function syncStore() {
+    readStore();
+    persistStore();
   }
 
   // Cattura i parametri presenti nell'URL corrente (last click vince).
@@ -358,12 +374,12 @@
     // I cookie _fbp/_fbc compaiono solo dopo l'accettazione del banner: si ripassa.
     if (CFG.consentEvent) {
       document.addEventListener(CFG.consentEvent, function () {
-        persistStore();
+        syncStore();
         fill(document);
       }, false);
     }
-    setTimeout(function () { persistStore(); fill(document); }, 1500);
-    setTimeout(function () { fill(document); }, 4000);
+    setTimeout(function () { syncStore(); fill(document); }, 1500);
+    setTimeout(function () { syncStore(); fill(document); }, 4000);
 
     log('attivo', CFG.v || '');
   }

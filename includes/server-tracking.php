@@ -385,37 +385,17 @@ function fst_build_user_data( $fbclid = '' ) {
             error_log( '[FST] _fbc cookie presente' ); // Valore non loggato.
         }
     } elseif ( ! empty( $fbclid ) ) {
-        // Se non c'è cookie _fbc ma abbiamo fbclid, costruisce il valore manualmente
-        // Formato _fbc: fb.{subdomain-index}.{timestamp}.{fbclid}
-        // Determine the subdomain index (0 for 'com', 1 for 'example.com', 2 for 'www.example.com')
-        $subdomain_index = 1; // Default: assume cookie is set on example.com
-
-        // Attempt to determine the correct subdomain index based on the referring URL
-        $referrer = $_SERVER['HTTP_REFERER'] ?? '';
-        if ( ! empty( $referrer ) ) {
-            $referrer_parts = parse_url( $referrer );
-            if ( ! empty( $referrer_parts['host'] ) ) {
-            // Check for fb*.example.com or m.example.com patterns in the referrer host
-            if ( preg_match( '/^fb(\d+)\./', $referrer_parts['host'], $matches ) ) {
-                $subdomain_index = (int) $matches[1];
-            } elseif ( strpos( $referrer_parts['host'], 'm.' ) === 0 ) {
-                $subdomain_index = 0; // Consider 'm' as the base domain
-            }
-            }
-        }
-        $timestamp = time();
-        $fbc_value = "fb.{$subdomain_index}.{$timestamp}.{$fbclid}";
+        // Se non c'è cookie _fbc ma abbiamo fbclid, costruisce il valore manualmente.
+        $fbc_value        = fst_build_fbc_from_fbclid( $fbclid );
         $user_data['fbc'] = $fbc_value;
-        
+
         if ( WP_DEBUG ) {
             error_log( '[FST] _fbc costruito da FBCLID' ); // Valore non loggato.
         }
 
-        // OPZIONALE: Imposta anche il cookie nel browser per le prossime richieste
-        setcookie( '_fbc', $fbc_value, time() + 7776000, '/', '', false, false ); // 90 giorni
-        if ( WP_DEBUG ) {
-            error_log( '[FST] Cookie _fbc impostato' );
-        }
+        // Persiste il cookie: le richieste successive (e i campi hidden dei form)
+        // useranno lo STESSO valore inviato alla Conversions API.
+        fst_persist_fbc_cookie( $fbc_value );
 
     } else {
         $user_data['fbc'] = null;
@@ -440,8 +420,128 @@ function fst_build_user_data( $fbclid = '' ) {
 }
 
 /**
+ * Costruisce il valore del cookie _fbc a partire da un fbclid.
+ *
+ * Formato ufficiale Meta: fb.{subdomain-index}.{creation-time}.{fbclid}
+ * dove creation-time è il tempo UNIX in MILLISECONDI (come lo scrive il Pixel).
+ *
+ * @param string $fbclid Facebook Click ID.
+ * @return string Valore _fbc, stringa vuota se il fbclid è vuoto.
+ * @since 0.11.0
+ */
+function fst_build_fbc_from_fbclid( $fbclid ) {
+    $fbclid = trim( (string) $fbclid );
+    if ( '' === $fbclid ) {
+        return '';
+    }
+
+    // Indice sottodominio (0 = 'com', 1 = 'example.com', 2 = 'www.example.com').
+    $subdomain_index = 1; // Default: cookie impostato su example.com.
+
+    // Il referrer permette di riconoscere i domini fb*.example.com / m.example.com.
+    $referrer = $_SERVER['HTTP_REFERER'] ?? '';
+    if ( ! empty( $referrer ) ) {
+        $referrer_parts = wp_parse_url( $referrer );
+        if ( ! empty( $referrer_parts['host'] ) ) {
+            if ( preg_match( '/^fb(\d+)\./', $referrer_parts['host'], $matches ) ) {
+                $subdomain_index = (int) $matches[1];
+            } elseif ( strpos( $referrer_parts['host'], 'm.' ) === 0 ) {
+                $subdomain_index = 0; // 'm' considerato dominio base.
+            }
+        }
+    }
+
+    // Millisecondi: è ciò che specifica Meta e ciò che scrive il Pixel.
+    $creation_time = (int) round( microtime( true ) * 1000 );
+
+    return "fb.{$subdomain_index}.{$creation_time}.{$fbclid}";
+}
+
+/**
+ * Persiste il cookie _fbc (90 giorni), SOLO con consenso marketing.
+ *
+ * Senza consenso non viene scritto nulla sul browser: il valore `fbc` continua ad
+ * arrivare al form perché assets/js/form-fields.js lo ricostruisce dal `fbclid`
+ * presente nell'URL, senza toccare cookie o storage. Stessa regola già applicata
+ * a `fst_uid` da fst_get_uid().
+ *
+ * Il cookie NON è httponly: deve restare leggibile dal Pixel e dallo script che
+ * compila i campi hidden dei form. $_COOKIE viene aggiornato solo quando il
+ * cookie viene davvero inviato, così rispecchia sempre lo stato del browser.
+ *
+ * @param string $fbc_value Valore _fbc da persistere.
+ * @return bool True se il cookie è stato inviato.
+ * @since 0.11.0
+ */
+function fst_persist_fbc_cookie( $fbc_value ) {
+    $fbc_value = trim( (string) $fbc_value );
+    if ( '' === $fbc_value ) {
+        return false;
+    }
+
+    // GDPR: nessun cookie senza consenso marketing, in nessun caso.
+    if ( ! ati_has_marketing_consent() ) {
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[FST] Cookie _fbc NON impostato: consenso marketing assente' );
+        }
+        return false;
+    }
+
+    if ( headers_sent() ) {
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[FST] Cookie _fbc non impostato: header gia inviati' );
+        }
+        return false;
+    }
+
+    setcookie( '_fbc', $fbc_value, time() + 7776000, '/', '', false, false ); // 90 giorni.
+    $_COOKIE['_fbc'] = $fbc_value;
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[FST] Cookie _fbc impostato' );
+    }
+    return true;
+}
+
+/**
+ * Cattura il fbclid dall'URL e persiste _fbc PRIMA che la pagina venga generata.
+ *
+ * Senza questo hook il cookie nasceva solo al ritorno della chiamata AJAX/REST di
+ * tracciamento: i campi hidden dei form compilati prima di quel momento restavano
+ * senza `fbc`, e il valore poteva differire da quello inviato alla CAPI.
+ * Agganciato a `template_redirect`: gli header non sono ancora stati inviati,
+ * quindi il cookie è già disponibile al primo byte di HTML.
+ *
+ * La scrittura avviene solo con consenso marketing (vedi fst_persist_fbc_cookie()).
+ * Senza consenso il campo `fbc` del form viene comunque compilato, ricostruito
+ * lato client dal `fbclid` dell'URL: nessuno storage coinvolto.
+ *
+ * @return void
+ * @since 0.11.0
+ */
+function fst_capture_fbclid_from_url() {
+    if ( is_admin() || wp_doing_ajax() ) {
+        return;
+    }
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        return;
+    }
+    // Cookie già presente (Pixel o visita precedente): è la fonte di verità.
+    if ( isset( $_COOKIE['_fbc'] ) && '' !== trim( (string) $_COOKIE['_fbc'] ) ) {
+        return;
+    }
+
+    $fbclid = isset( $_GET['fbclid'] ) ? sanitize_text_field( wp_unslash( $_GET['fbclid'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
+    if ( '' === $fbclid ) {
+        return;
+    }
+
+    fst_persist_fbc_cookie( fst_build_fbc_from_fbclid( $fbclid ) );
+}
+add_action( 'template_redirect', 'fst_capture_fbclid_from_url' );
+
+/**
  * Genera o recupera pseudonimo utente persistente
- * 
+ *
  * Crea un identificatore unico per ogni visitatore che persiste tra le sessioni
  * ma rimane anonimo. Utilizza:
  * 

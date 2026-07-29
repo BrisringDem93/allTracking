@@ -587,17 +587,20 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // ========================================
   // FUNZIONI HELPER EVENT ID E EXTERNAL ID
   // ========================================
+  // L'event_id serve a condividere lo STESSO identificativo tra la chiamata a
+  // Facebook Pixel e quella al server (deduplica Meta): vive quanto il singolo
+  // invio, quindi basta una variabile in memoria. In precedenza era il cookie
+  // `fst_ev_id`, scritto anche senza consenso: nessuno storage senza consenso.
+  let _fstEventId = null;
+
   function getEventId() {
-    const m = document.cookie.match(/(?:^|; )fst_ev_id=([^;]+)/);
-    if (m) return decodeURIComponent(m[1]);
-    const id = 'evt_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-    document.cookie = 'fst_ev_id=' + encodeURIComponent(id) +
-      '; path=/; max-age=3600; SameSite=Lax';
-    return id;
+    if (_fstEventId) return _fstEventId;
+    _fstEventId = 'evt_' + Date.now() + '_' + Math.random().toString(36).slice(2);
+    return _fstEventId;
   }
-  
+
   function clearEventId() {
-    document.cookie = 'fst_ev_id=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT; SameSite=Lax';
+    _fstEventId = null;
   }
   
   // Genera o recupera external_id persistente (come lato server).

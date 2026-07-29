@@ -14,11 +14,44 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
   `form_fields[fbclid]` (Elementor), id `form-field-fbclid`, classe `ati-field-fbclid` e
   attributo `data-ati-field="fbclid"`.
 - Sorgenti dei valori: parametri URL, cookie `_fbc` / `_fbp` / `_gcl_aw` / `fst_uid` e
-  persistenza dei click id (sessionStorage sempre, cookie `fst_clid` 90 giorni **solo con
-  consenso marketing**), così il click id sopravvive alla navigazione fino al form.
+  persistenza dei click id (cookie `fst_clid` 90 giorni + sessionStorage) **solo con
+  consenso marketing**, così il click id sopravvive alla navigazione fino al form.
+  Senza consenso i valori restano in memoria e i campi si compilano con quanto è
+  nell'URL della pagina corrente.
 - Nuova impostazione **"Campi hidden nei form"** (`ati_enable_form_fields`, attiva di
   default) nel tab Generale.
-- `tests/form-fields-tests.js`: 25 test con DOM simulato (`node tests/form-fields-tests.js`).
+- `tests/form-fields-tests.js`: 35 test con DOM simulato (`node tests/form-fields-tests.js`).
+- **`_fbc` generato prima del render della pagina** (`fst_capture_fbclid_from_url()`, hook
+  `template_redirect`): se l'URL contiene `fbclid`, il cookie `_fbc` non esiste e c'è il
+  consenso marketing, il valore viene costruito e persistito **al primo byte di HTML**,
+  prima che parta qualsiasi JS. Il campo hidden `fbc` riceve quindi lo **stesso identico
+  valore** inviato alla Conversions API. Prima il cookie nasceva solo al ritorno della
+  chiamata AJAX/REST: i form compilati (o inviati) prima di quel momento restavano senza `fbc`.
+
+### Corretto
+- **`_fbc` con timestamp in millisecondi** (era in secondi): Meta specifica
+  `fb.<subdomain>.<creation-time>.<fbclid>` con `creation-time` in millisecondi, come
+  lo scrive il Pixel. Il valore costruito lato server era di 3 ordini di grandezza
+  inferiore e incoerente con quello client-side. Logica estratta in
+  `fst_build_fbc_from_fbclid()` (unica fonte di verità, riusata da
+  `fst_build_user_data()` e dalla cattura su `template_redirect`) e coperta da 9 test
+  in `tests/run-tests.php`.
+
+### Privacy — nessuno storage senza consenso marketing
+- **`_fbc` non viene più scritto senza consenso** (`fst_persist_fbc_cookie()`): prima il
+  cookie veniva impostato in ogni caso, appena arrivava un `fbclid`. Il campo `fbc` del
+  form resta comunque compilato: `form-fields.js` ricostruisce il valore dal `fbclid`
+  dell'URL, senza toccare cookie o storage. `$_COOKIE` viene aggiornato solo quando il
+  cookie viene davvero inviato, così rispecchia sempre lo stato del browser.
+- **Cookie `fst_ev_id` rimosso** (`tag-inserter.php`): l'event_id per la deduplica Meta
+  vive quanto il singolo invio, quindi ora è una variabile in memoria. Prima era un
+  cookie da 1 ora scritto anche senza consenso. Nessuna funzione server-side lo leggeva:
+  comportamento invariato, un cookie non consentito in meno.
+- **Persistenza click id gated in lettura e scrittura**: senza consenso `form-fields.js`
+  non scrive né legge `fst_clid` (né cookie né sessionStorage). Se il consenso arriva
+  dopo, lo storage viene idratato e i valori in memoria persistiti.
+- Audit completo: gli unici punti che scrivono storage sono ora `_fbc`, `fst_uid` e
+  `fst_clid`, tutti e tre condizionati al consenso marketing.
 
 ### Note
 - Nessun identificatore viene inventato: se il valore non esiste il campo resta vuoto.

@@ -276,6 +276,56 @@ ok( '' === ATI_GA4_Client_Context::session_id_from_ga_cookie(), 'cookie sessione
 $_COOKIE = array();
 
 // -------------------------------------------------------------------------
+section( 'Costruzione _fbc da fbclid (formato ufficiale Meta)' );
+require_once dirname( __DIR__ ) . '/includes/server-tracking.php';
+
+$_SERVER['HTTP_REFERER'] = '';
+$fbc = fst_build_fbc_from_fbclid( 'IwAR0test' );
+ok( (bool) preg_match( '/^fb\.1\.(\d+)\.IwAR0test$/', $fbc, $m ), "formato fb.1.<ms>.<fbclid> -> $fbc" );
+// creation-time in MILLISECONDI: deve essere ~1000x il tempo UNIX in secondi.
+$ms  = isset( $m[1] ) ? (int) $m[1] : 0;
+$now = time();
+ok( $ms >= ( $now - 5 ) * 1000 && $ms <= ( $now + 5 ) * 1000, 'creation-time in millisecondi (non secondi)' );
+ok( 13 === strlen( (string) $ms ), 'creation-time a 13 cifre come il cookie del Pixel' );
+ok( '' === fst_build_fbc_from_fbclid( '' ), 'fbclid vuoto -> nessun valore inventato' );
+ok( '' === fst_build_fbc_from_fbclid( '   ' ), 'fbclid con soli spazi -> nessun valore inventato' );
+
+$_SERVER['HTTP_REFERER'] = 'https://fb2.example.com/landing';
+ok( 0 === strpos( fst_build_fbc_from_fbclid( 'abc' ), 'fb.2.' ), 'subdomain index dal referrer fb2.*' );
+$_SERVER['HTTP_REFERER'] = 'https://m.example.com/landing';
+ok( 0 === strpos( fst_build_fbc_from_fbclid( 'abc' ), 'fb.0.' ), 'subdomain index 0 per referrer m.*' );
+$_SERVER['HTTP_REFERER'] = '';
+
+ok( false === fst_persist_fbc_cookie( '' ), 'valore vuoto -> nessun cookie' );
+
+// -------------------------------------------------------------------------
+section( 'Nessun cookie senza consenso marketing (GDPR)' );
+// NOTA: in CLI headers_sent() è sempre true dopo il primo echo, quindi il ramo
+// "consenso presente" non è osservabile qui; ciò che conta è che SENZA consenso
+// non si arrivi mai alla scrittura e $_COOKIE resti intatto.
+$GLOBALS['__ati_marketing_consent'] = false;
+$_COOKIE = array();
+ok( false === fst_persist_fbc_cookie( 'fb.1.1700000000000.test' ), 'senza consenso -> nessuna scrittura di _fbc' );
+ok( ! isset( $_COOKIE['_fbc'] ), 'senza consenso -> $_COOKIE non viene alterato' );
+
+// Cattura dall'URL: senza consenso non deve persistere nulla.
+$_GET['fbclid'] = 'IwAR0landing';
+fst_capture_fbclid_from_url();
+ok( ! isset( $_COOKIE['_fbc'] ), 'landing con fbclid senza consenso -> nessun cookie _fbc' );
+
+// Il valore resta comunque calcolabile: è ciò che il client mette nel campo hidden.
+ok( '' !== fst_build_fbc_from_fbclid( $_GET['fbclid'] ), 'il valore fbc resta disponibile per il form (nessuno storage)' );
+
+// Cookie già presente (scritto quando il consenso c'era): resta la fonte di verità.
+$_COOKIE['_fbc'] = 'fb.1.1700000000000.esistente';
+fst_capture_fbclid_from_url();
+ok( 'fb.1.1700000000000.esistente' === $_COOKIE['_fbc'], 'cookie _fbc esistente non viene sovrascritto' );
+
+$_GET    = array();
+$_COOKIE = array();
+$GLOBALS['__ati_marketing_consent'] = false;
+
+// -------------------------------------------------------------------------
 echo "\n---------------------------------------\n";
 echo "RISULTATO: {$GLOBALS['__pass']} PASS / {$GLOBALS['__fail']} FAIL\n";
 exit( $GLOBALS['__fail'] > 0 ? 1 : 0 );

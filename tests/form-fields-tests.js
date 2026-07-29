@@ -69,9 +69,15 @@ function run(scenario) {
     console,
   };
 
+  // Le passate differite non partono da sole: il test le esegue quando serve.
+  const timers = [];
+  const setTimeoutStub = fn => { timers.push(fn); };
+
+  if (scenario.onWindow) scenario.onWindow(windowStub);
+
   const fn = new Function('window', 'document', 'setTimeout', 'URLSearchParams', 'Event', CODE);
-  fn(windowStub, documentStub, () => {}, URLSearchParams, function () {});
-  return { listeners, cookies, sessionData, documentStub };
+  fn(windowStub, documentStub, setTimeoutStub, URLSearchParams, function () {});
+  return { listeners, cookies, sessionData, documentStub, windowStub, timers };
 }
 
 console.log('\n== Compilazione base: fbclid/gclid da URL, fbc costruito, fbp da cookie ==');
@@ -146,7 +152,7 @@ console.log('\n== Campi non riconosciuti e valori esistenti ==');
   ok(preset.value === 'IMPOSTATO-DAL-SITO', 'valore preesistente non sovrascritto');
 }
 
-console.log('\n== Persistenza: click id disponibile nelle pagine successive ==');
+console.log('\n== Persistenza (solo con consenso): click id nelle pagine successive ==');
 {
   const first = run({ inputs: [], search: '?gclid=PERSIST1&fbclid=PERSIST2', consent: true });
   const sessionSeed = first.sessionData['fst_clid'];
@@ -156,16 +162,67 @@ console.log('\n== Persistenza: click id disponibile nelle pagine successive ==')
   // Seconda pagina: nessun parametro in URL, ma il cookie persiste.
   const gclid = makeInput({ name: 'gclid' });
   const fbc = makeInput({ name: 'fbc' });
-  run({ inputs: [gclid, fbc], search: '', cookies: { fst_clid: first.cookies['fst_clid'] } });
+  run({
+    inputs: [gclid, fbc],
+    search: '',
+    cookies: { fst_clid: first.cookies['fst_clid'] },
+    consent: true,
+  });
   ok(gclid.value === 'PERSIST1', 'gclid recuperato dalla persistenza in pagina 2');
   ok(/^fb\.1\.\d+\.PERSIST2$/.test(fbc.value), 'fbc ricostruito dalla persistenza in pagina 2');
 }
 
-console.log('\n== Senza consenso marketing: niente cookie di persistenza ==');
+console.log('\n== Senza consenso: NESSUNO storage, né in scrittura né in lettura ==');
 {
   const r = run({ inputs: [], search: '?gclid=NOCONSENT', consent: false });
   ok(!r.cookies['fst_clid'], 'nessun cookie fst_clid senza consenso');
-  ok(!!r.sessionData['fst_clid'], 'sessionStorage comunque valorizzato');
+  ok(!r.sessionData['fst_clid'], 'nessuna scrittura in sessionStorage senza consenso');
+
+  // Storage preesistente (da una sessione consentita, o consenso revocato): non si legge.
+  const gclid = makeInput({ name: 'gclid' });
+  run({
+    inputs: [gclid],
+    search: '',
+    cookies: { fst_clid: JSON.stringify({ gclid: 'VECCHIO' }) },
+    consent: false,
+  });
+  ok(gclid.value === '', 'cookie fst_clid preesistente ignorato senza consenso');
+}
+
+console.log('\n== Senza consenso: fbc/fbclid arrivano comunque nel form dall\'URL ==');
+{
+  const fbc = makeInput({ name: 'fbc' });
+  const fbclid = makeInput({ name: 'fbclid' });
+  const gclid = makeInput({ name: 'gclid' });
+  const r = run({
+    inputs: [fbc, fbclid, gclid],
+    search: '?fbclid=NOCOOKIE1&gclid=NOCOOKIE2',
+    consent: false,
+  });
+  ok(/^fb\.1\.\d+\.NOCOOKIE1$/.test(fbc.value), 'fbc costruito e inserito nel form -> ' + fbc.value);
+  ok(fbclid.value === 'NOCOOKIE1', 'fbclid inserito nel form');
+  ok(gclid.value === 'NOCOOKIE2', 'gclid inserito nel form');
+  ok(Object.keys(r.cookies).length === 0, 'nessun cookie scritto in tutto il flusso');
+  ok(Object.keys(r.sessionData).length === 0, 'nessuna chiave in sessionStorage');
+}
+
+console.log('\n== Consenso dato dopo il load: lo storage viene idratato e persistito ==');
+{
+  const gclid = makeInput({ name: 'gclid' });
+  const windowRef = {};
+  const r = run({
+    inputs: [gclid],
+    search: '?gclid=LATE',
+    consent: false,
+    onWindow: w => { windowRef.w = w; },
+  });
+  ok(!r.cookies['fst_clid'], 'prima del consenso: nessun cookie');
+  windowRef.w.marketingConsent = true;
+  r.listeners.submit[0]({ target: { nodeName: 'FORM', querySelectorAll: () => [gclid] } });
+  ok(gclid.value === 'LATE', 'valore dall\'URL presente comunque');
+  ok(!!r.timers.length, 'passate differite registrate');
+  r.timers.forEach(fn => fn());
+  ok(!!r.cookies['fst_clid'], 'dopo il consenso il click id viene persistito');
 }
 
 console.log('\n== Refill in capture sul submit (cookie comparso dopo il consenso) ==');

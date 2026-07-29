@@ -17,6 +17,11 @@ if ( ! defined( 'ABSPATH' ) ) {
 if ( ! defined( 'DAY_IN_SECONDS' ) ) {
 	define( 'DAY_IN_SECONDS', 86400 );
 }
+// In WordPress WP_DEBUG è sempre definita (wp_initial_constants); qui serve per
+// poter caricare includes/server-tracking.php, che la legge senza defined().
+if ( ! defined( 'WP_DEBUG' ) ) {
+	define( 'WP_DEBUG', false );
+}
 if ( ! defined( 'PHP_INT_MAX' ) ) {
 	// noop.
 }
@@ -89,4 +94,25 @@ function home_url( $path = '' ) {
 }
 function esc_attr( $s ) {
 	return htmlspecialchars( (string) $s, ENT_QUOTES );
+}
+function wp_unslash( $v ) {
+	return is_string( $v ) ? stripslashes( $v ) : $v;
+}
+function is_admin() {
+	return false;
+}
+function wp_doing_ajax() {
+	return false;
+}
+function is_user_logged_in() {
+	return false;
+}
+
+/**
+ * Consenso marketing: in WordPress è definita da includes/tag-inserter.php, caricato
+ * prima di server-tracking.php. Qui è pilotabile dai test via $GLOBALS.
+ */
+$GLOBALS['__ati_marketing_consent'] = false;
+function ati_has_marketing_consent() {
+	return (bool) $GLOBALS['__ati_marketing_consent'];
 }

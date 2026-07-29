@@ -56,21 +56,43 @@ Da dove arrivano i valori:
 | --- | --- |
 | `fbclid` | parametro URL → coda del cookie `_fbc` → click id memorizzato |
 | `gclid` | parametro URL → coda del cookie `_gcl_aw` → click id memorizzato |
-| `fbc` | cookie `_fbc` → costruito come `fb.1.<timestamp>.<fbclid>` |
+| `fbc` | cookie `_fbc` → costruito come `fb.<sub>.<timestamp-ms>.<fbclid>` |
 | `fbp` | **solo** cookie `_fbp` del Pixel (mai generato) |
 | `external_id` | cookie `fst_uid` (pseudonimo del plugin) |
 | `utm_*`, altri click id | parametro URL → valore memorizzato |
 
+### `fbc`: chi lo genera e come arriva al form
+
+`fbp` viene **solo letto** dal cookie del Pixel: non è generabile senza falsare il
+match con Meta. `fbc` invece viene ricostruito da `fbclid` quando il cookie manca:
+
+1. **Lato server, al caricamento della pagina** (`fst_capture_fbclid_from_url()`,
+   hook `template_redirect`): se l'URL contiene `fbclid`, `_fbc` non esiste **e c'è il
+   consenso marketing**, il valore viene costruito da `fst_build_fbc_from_fbclid()` e il
+   cookie `_fbc` viene scritto **prima del primo byte di HTML**. Quando lo script compila
+   il form, il cookie c'è già: il campo hidden riceve lo **stesso valore** che finirà
+   nella Conversions API.
+2. **Lato server, sugli eventi** (`fst_build_user_data()`): stessa funzione, per i casi in
+   cui il `fbclid` arriva dal frontend e non dall'URL.
+3. **Lato client** (`form-fields.js`): se il cookie manca — perché non c'è consenso, o
+   perché la pagina arriva da una cache full-page — il valore viene costruito nel browser
+   **solo per riempire il campo**, senza scrivere nulla nello storage.
+
+Il formato è quello ufficiale Meta `fb.<subdomain-index>.<creation-time>.<fbclid>`, con
+`creation-time` in **millisecondi** (dalla 0.11.0: prima lato server erano secondi).
+
 Regole di sicurezza:
 
 - **Nessun identificatore viene inventato**: se il valore non è disponibile il campo
-  resta vuoto. L'unica costruzione ammessa è `fbc`, nel formato ufficiale e con la
-  stessa logica già usata lato server da `fst_build_user_data()`.
+  resta vuoto. L'unica costruzione ammessa è `fbc`, come descritto sopra.
 - I campi **già valorizzati** dal sito o dall'utente non vengono sovrascritti; i campi
   hidden non riconosciuti (`_wpnonce`, `redirect_to`, ...) non vengono toccati.
-- I click id vengono memorizzati per sopravvivere alla navigazione fino al form:
-  in `sessionStorage` sempre, nel cookie `fst_clid` (90 giorni) **solo con consenso
-  marketing**, come già avviene per `fst_uid`.
+- **Nessuno storage senza consenso marketing.** Con il consenso i click id vengono
+  memorizzati (cookie `fst_clid` 90 giorni + `sessionStorage`) e restano disponibili
+  nelle pagine successive; senza consenso non viene né scritto né letto nulla, quindi
+  i campi si compilano con quanto è nell'URL della pagina corrente — che è il caso
+  tipico, perché il form sta sulla landing raggiunta dall'annuncio. Stessa regola già
+  applicata a `fst_uid`.
 - La compilazione viene ripetuta sui form inseriti dopo il caricamento (AJAX, popup,
   multistep), al cambio di consenso e in fase di *capture* del `submit`: i cookie
   `_fbp`/`_fbc`, che compaiono solo dopo l'accettazione del banner, finiscono comunque
