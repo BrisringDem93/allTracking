@@ -2,6 +2,86 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.12.0] - 2026-07-29 — Blocco dei cookie senza consenso
+
+### Aggiunto
+- **Nuovo tab "Blocco Cookie"** (`includes/cookie-guard/`, `assets/js/cookie-guard.js`):
+  impedisce la scrittura dei cookie non consentiti e cancella quelli già presenti, con
+  regole **granulari per categoria di consenso**. Il guard viene stampato inline in
+  `wp_head` a **priorità 0** — prima del container GTM e di qualunque script accodato —
+  e sostituisce il setter di `document.cookie`: la valutazione avviene quindi *prima*
+  che un pixel possa scrivere. Una passata periodica cancella inoltre i cookie
+  preesistenti che violano le regole.
+- **Regole con operatori espliciti**: è esattamente / contiene / inizia con / finisce con
+  / *inizia con … e finisce con …* / pattern con `*` e `?` / regex / appartiene al
+  dominio (sottodomini inclusi). Ogni regola ha categoria
+  (`marketing`, `analytics`, `preferences`, `always`), opzione maiuscole/minuscole e
+  azione (blocca la scrittura, cancella se presente, entrambe). Vince la prima regola
+  che blocca; una regola blocca **solo quando manca il consenso della sua categoria**.
+- **22 regole predefinite ATTIVE out of the box** (GA `_ga`/`_ga_*`/`_gid`/`_gat*`,
+  Google Ads/DoubleClick `_gcl_*`/`_gac_*`/`IDE`, Meta `_fbp`/`_fbc`, Hotjar, Clarity,
+  Matomo, UET, LinkedIn, TikTok, Pinterest, X, Yandex, Snapchat): il blocco funziona
+  appena installato, senza configurare nulla. Le regole sono modificabili dal backend —
+  si disattivano una per una, si eliminano (svuotando il campo «Valore») o si
+  ripristinano con **"Ripristina configurazione predefinita"**. Nessuna regola
+  predefinita colpisce cookie di sistema o del CMP (verificato dai test).
+- Le regole predefinite sono un **default virtuale**: finché l'amministratore non salva,
+  l'opzione `ati_cg_rules` non esiste e `rules()` restituisce `default_rules()`. Chi
+  elimina tutte le regole e salva non se le vede riapparire (opzione salvata vuota e
+  opzione mai salvata sono stati distinti). Filtro `ati_cookie_guard_default_rules`.
+- **Pannello di controllo del consenso**: stato per categoria affiancato lato **server**
+  (cookie della richiesta) e lato **browser in tempo reale**, CMP rilevati, elenco dei
+  cookie presenti con l'esito che ciascuno avrebbe, elenco dei cookie ricevuti dal
+  server (inclusi gli `HttpOnly`) e **tester** interattivo su un nome di cookie.
+  Il pannello usa lo stesso `cookie-guard.js` del front-end in sola lettura
+  (`mode=off`, `expose=true`): l'anteprima non può divergere dal comportamento reale.
+- **Rilevamento consenso granulare** (`ATI_Cookie_Consent`) per Complianz, iubenda,
+  Cookiebot e OneTrust, con categoria "preferenze/funzionali" (nuova) oltre a marketing
+  e analytics. Opzione per **forzare un CMP** quando sul sito ne convivono più di uno e
+  indici dei purpose iubenda configurabili (default 3/4/5).
+- **Pulizia lato server opzionale** (`ati_cg_server_cleanup`, disattivata): invalida via
+  `Set-Cookie` scaduto i cookie della richiesta che violano le regole, su tutte le
+  varianti di dominio. Intercetta anche i cookie scritti da header HTTP, invisibili a
+  JavaScript.
+- `tests/cookie-guard-tests.php` (129 test sul motore di regole PHP) e
+  `tests/cookie-guard-tests.js` (87 test sul guard con DOM simulato). Gli stessi casi di
+  matching sono verificati su entrambe le implementazioni, che devono restare allineate.
+  Coperti anche: copertura delle regole predefinite sui nomi di cookie reali,
+  disattivazione di una singola regola predefinita, salvataggio vuoto ed esclusione
+  degli utenti loggati.
+- Filtri: `ati_cookie_guard_protected_patterns`, `ati_cookie_guard_active`,
+  `ati_cookie_guard_script_config`, `ati_cookie_guard_consent_state`.
+
+### Sicurezza
+- **Attivo di default** (modalità `enforce`) con le regole predefinite. Una regola blocca
+  soltanto quando manca il consenso della sua categoria: con il consenso concesso il
+  comportamento del sito è identico alla 0.11.0. Si spegne con un menu a tendina
+  (**Disattivato**, che conserva le regole) o si porta in **Monitoraggio**, che logga in
+  console cosa bloccherebbe senza toccare nulla.
+- Il tab avvisa in modo esplicito quando **nessun CMP è rilevato** e il blocco è attivo:
+  in quello scenario il consenso risulterebbe sempre assente e i cookie di analytics e
+  marketing verrebbero bloccati per tutti.
+- **Allowlist non modificabile** sui cookie che romperebbero il sito o cancellerebbero la
+  scelta di consenso: sessione WordPress (`wordpress*`, `wp-*`, `wp_*`), `PHPSESSID`,
+  WooCommerce, cookie dei CMP (`cmplz_*`, `_iub_cs-*`, `CookieConsent*`,
+  `OptanonConsent`, `cookielawinfo-*`, `cky-*`, …) e del plugin (`fst_*`, `ati_*`).
+  Ha la precedenza su qualunque regola, categoria `always` inclusa. Estendibile con
+  un'allowlist personalizzata.
+- Le **cancellazioni di cookie non vengono mai bloccate** (`expires` nel passato o
+  `max-age<=0`): altrimenti nessuno potrebbe più rimuovere un cookie.
+- Il blocco **non si applica agli utenti loggati** per default.
+- Qualunque eccezione nella valutazione lascia passare la scrittura: il guard non può
+  rompere una funzionalità del sito.
+- Le regex fornite dall'amministratore vengono compilate in modo isolato: una regex non
+  valida non produce match né errori, ed è segnalata nel pannello.
+
+### Invariato
+- GA4 server-side, Meta Pixel / Conversions API, n8n, compilazione dei campi hidden e
+  rilevamento del consenso marketing esistente: nessuna logica modificata. Il consenso
+  marketing e quello analytics del blocco cookie **delegano** alle funzioni già in uso
+  (`ati_has_marketing_consent()`, `ATI_Consent_Service::has_analytics_consent()`), così
+  le due parti non possono divergere.
+
 ## [0.11.0] - 2026-07-29 — Compilazione automatica dei campi hidden nei form
 
 ### Aggiunto

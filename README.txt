@@ -2,7 +2,7 @@
 
 Un plugin WordPress che consente di installare rapidamente Facebook Pixel, Google Analytics 4 e Google Tag Manager senza toccare il codice.
 
-Versione: 0.11.0
+Versione: 0.12.0
 
 ## GA4 "server-side first" (conversioni confermate)
 
@@ -101,6 +101,132 @@ Regole di sicurezza:
 La funzione è attiva di default e si disattiva da **Impostazioni → Tracking Integration
 → Generale → "Campi hidden nei form"**. Con `WP_DEBUG` attivo la console mostra quali
 campi vengono compilati. Test: `node tests/form-fields-tests.js`.
+
+## Blocco dei cookie senza consenso
+
+Tab **Impostazioni → Tracking Integration → "Blocco Cookie"**. La funzione impedisce la
+scrittura dei cookie non consentiti e cancella quelli già presenti, in base a regole
+**granulari per categoria di consenso**.
+
+È **attiva out of the box**: il plugin parte con 22 regole predefinite che bloccano i
+cookie dei tracker più diffusi quando manca il consenso della loro categoria. Non serve
+configurare nulla, e con il consenso concesso il sito si comporta esattamente come prima.
+
+Bloccati di default (in assenza del consenso corrispondente):
+
+| Cookie | Categoria |
+| --- | --- |
+| `_ga`, `_ga_*` (es. `_ga_0RVDVFM24W`), `_gid`, `_gat*`, `__utm*` | analytics |
+| `_hj*` (Hotjar), `_clck`/`_clsk` (Clarity), `_pk_*` (Matomo), `_ym_*` (Yandex) | analytics |
+| `_fbp`, `_fbc` (Meta Pixel) | marketing |
+| `_gcl_*`, `_gac_*`, `IDE`, `test_cookie` (Google Ads / DoubleClick) | marketing |
+| `_uet*` (Microsoft Ads), `li_fat_id`/`bcookie`/`lidc` (LinkedIn) | marketing |
+| `_tt*` (TikTok), `_pin_*` (Pinterest), `personalization_id` (X), `_scid*` (Snapchat) | marketing |
+
+**Come togliere o disattivare i blocchi**, dal tab:
+
+- disattiva la **singola regola** togliendo la spunta «Attiva» e salva;
+- **elimina** una regola svuotando il campo «Valore» e salva;
+- «Disattiva tutte» / «Elimina tutte» agiscono sull'intero set;
+- «Ripristina configurazione predefinita» riporta tutto allo stato iniziale;
+- il menu **Modalità → Disattivato** spegne l'intera funzione conservando le regole.
+
+Finché non salvi, le regole sono un *default virtuale* (l'opzione non esiste ancora nel
+database); al primo salvataggio diventano tue. Chi elimina tutte le regole e salva non se
+le vede riapparire.
+
+### Come funziona
+
+Il guard (`assets/js/cookie-guard.js`) viene stampato inline in `wp_head` a **priorità 0**
+— prima del container GTM e di qualunque script accodato — e sostituisce il setter di
+`document.cookie`. Prima di ogni scrittura valuta nome e dominio del cookie contro le
+regole e lo stato di consenso; se la categoria non è consentita, la scrittura viene
+scartata. In parallelo una passata periodica cancella i cookie già presenti che violano
+le regole (utile per i cookie scritti prima dell'installazione del guard o da script
+caricati in ritardo).
+
+Il consenso viene **rivalutato a ogni passata e a ogni evento di consenso**: appena
+l'utente accetta una categoria, i cookie corrispondenti tornano a passare senza ricaricare
+la pagina.
+
+### Modalità
+
+| Modalità | Comportamento |
+| --- | --- |
+| `enforce` (default) | Blocca la scrittura e cancella i cookie non consentiti |
+| `monitor` | Scrive in console cosa bloccherebbe/cancellerebbe, senza toccare nulla |
+| `off` | Nessun intervento, nessun output sul front-end (le regole restano salvate) |
+
+Se qualcosa non torna, passa a **monitor**: la console mostra esattamente cosa verrebbe
+bloccato, così puoi verificare prima di riattivare.
+
+**Attenzione al rilevamento del consenso.** Se il sito non ha un CMP riconosciuto
+(Complianz, iubenda, Cookiebot, OneTrust) o un cookie di consenso personalizzato, il
+consenso risulta sempre assente e i cookie di analytics e marketing vengono bloccati
+*sempre*, anche per chi accetta. Il tab lo segnala in rosso e la tabella dei consensi
+mostra affiancati lo stato visto dal server e quello visto dal browser.
+
+### Regole
+
+Ogni regola è: *categoria* + *operatore* + *valore* + *azione*. Il cookie viene bloccato
+**solo quando manca il consenso della categoria indicata**.
+
+| Operatore | Esempio |
+| --- | --- |
+| è esattamente | `_fbp` |
+| contiene | `analytics` |
+| inizia con | `_ga` → `_ga`, `_ga_ABC123`, `_gali` |
+| finisce con | `_id` → `visitor_id`, `user_id` |
+| inizia con … e finisce con … | `_pk_` + `.1` → `_pk_id.1` |
+| pattern (`*` e `?`) | `_hj*`, `_cl?k`, `*_uet*` |
+| regex | `^_ga(_[A-Z0-9]+)?$` (senza delimitatori) |
+| appartiene al dominio | `doubleclick.net` (include i sottodomini) |
+
+Categorie: `marketing`, `analytics` (statistiche), `preferences` (funzionali) e `always`
+(blacklist: blocca sempre, indipendentemente dal consenso). Azioni: blocca la scrittura,
+cancella se presente, oppure entrambe. Le regole sono valutate in ordine: vince la prima
+che blocca. Alle regole predefinite se ne possono aggiungere quante se ne vogliono.
+
+### Sicurezza: cosa non viene mai toccato
+
+Un'allowlist **non modificabile** protegge i cookie che romperebbero il sito o
+cancellerebbero la scelta di consenso: sessione WordPress (`wordpress*`, `wp-*`, `wp_*`),
+`PHPSESSID`, WooCommerce, i cookie dei CMP (`cmplz_*`, `_iub_cs-*`, `CookieConsent*`,
+`OptanonConsent`, `cookielawinfo-*`, `cky-*`, …) e quelli del plugin (`fst_*`, `ati_*`).
+Si può estendere con un'allowlist personalizzata (un pattern per riga, con `*` e `?`), che
+ha la precedenza su qualunque regola. Inoltre, di default il blocco **non si applica agli
+utenti loggati** e le **cancellazioni di cookie non vengono mai bloccate** (altrimenti
+nessuno potrebbe più rimuovere un cookie).
+
+### Consenso granulare e CMP
+
+Il pannello mostra, affiancati, i consensi visti dal **server** (cookie della richiesta) e
+quelli visti dal **browser in tempo reale**, per le tre categorie non necessarie. Sotto,
+l'elenco dei cookie presenti con l'esito che ciascuno avrebbe, i cookie ricevuti dal
+server (inclusi gli `HttpOnly`) e un **tester** in cui digitare un nome di cookie per
+vedere subito quale regola lo colpisce.
+
+Il rilevamento supporta Complianz, iubenda, Cookiebot e OneTrust, con opzione per forzare
+un CMP specifico quando sul sito ne convivono più di uno. Gli indici dei purpose iubenda
+(3/4/5 di default) sono configurabili. I cookie di consenso personalizzati di marketing e
+analytics sono quelli già impostati nei tab **Generale** e **GA4 Server-Side**: il blocco
+cookie li riusa senza duplicarli; solo la categoria "preferenze" ha un campo proprio.
+
+### Limiti
+
+- I cookie di **terze parti impostati via header HTTP** (iframe YouTube, DoubleClick, …)
+  non sono intercettabili da JavaScript: vanno bloccati non caricando lo script/iframe.
+- I cookie `HttpOnly` non sono accessibili da JavaScript: solo la **pulizia lato server**
+  (opzionale) può rimuoverli.
+- `localStorage` / `sessionStorage` non sono cookie e non sono gestiti.
+- Il blocco non sostituisce un CMP: fa rispettare le scelte che il banner ha già raccolto.
+
+Nota: il plugin può agire solo sui cookie del **proprio dominio**. I cookie che il browser
+mostra per altri domini (`.leadconnectorhq.com`, `.protocollodeminicis.com`, …) sono di
+altri siti e nessuno script di questo sito può leggerli o cancellarli.
+
+Test: `php tests/cookie-guard-tests.php` (motore di regole PHP) e
+`node tests/cookie-guard-tests.js` (guard nel browser, con DOM simulato).
 
 ## Installazione
 

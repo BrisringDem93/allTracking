@@ -92,6 +92,7 @@ function ati_settings_tabs() {
         'general' => __( 'Generale', 'ati' ),
         'server'  => __( 'Server-Side (n8n & Meta)', 'ati' ),
         'ga4'     => __( 'GA4 Server-Side', 'ati' ),
+        'cookies' => __( 'Blocco Cookie', 'ati' ),
     );
 }
 
@@ -135,6 +136,13 @@ function ati_settings_page() {
                     ATI_GA4_Admin::render_tab();
                 } else {
                     echo '<p>' . esc_html__( 'Sottosistema GA4 non caricato.', 'ati' ) . '</p>';
+                }
+                break;
+            case 'cookies':
+                if ( class_exists( 'ATI_Cookie_Guard_Admin' ) ) {
+                    ATI_Cookie_Guard_Admin::render_tab();
+                } else {
+                    echo '<p>' . esc_html__( 'Sottosistema blocco cookie non caricato.', 'ati' ) . '</p>';
                 }
                 break;
             default:

@@ -51,6 +51,21 @@ $options = array(
 	'ati_class_service_type',
 	'ati_class_audience_type',
 	'ati_class_site_section',
+	// Blocco cookie.
+	'ati_cg_mode',
+	'ati_cg_skip_logged_in',
+	'ati_cg_server_cleanup',
+	'ati_cg_debug',
+	'ati_cg_cmp',
+	'ati_cg_preferences_cookie_name',
+	'ati_cg_consent_event',
+	'ati_cg_iub_preferences',
+	'ati_cg_iub_analytics',
+	'ati_cg_iub_marketing',
+	'ati_cg_sweep_interval',
+	'ati_cg_sweep_duration',
+	'ati_cg_rules',
+	'ati_cg_allowlist',
 );
 
 foreach ( $options as $option ) {
