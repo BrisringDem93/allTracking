@@ -28,6 +28,7 @@ function ati_register_settings() {
     register_setting( 'ati_settings', 'ati_enable_ga4', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_enable_gtm', array( 'sanitize_callback' => 'sanitize_text_field' ) );
     register_setting( 'ati_settings', 'ati_disable_logged_in', array( 'sanitize_callback' => 'sanitize_text_field' ) );
+    register_setting( 'ati_settings', 'ati_enable_form_fields', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => '1' ) );
     register_setting( 'ati_settings', 'ati_consent_cookie_name', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ) );
     register_setting( 'ati_settings', 'ati_consent_custom_event', array( 'sanitize_callback' => 'sanitize_text_field', 'default' => '' ) );
 
@@ -189,6 +190,22 @@ function ati_render_general_tab() {
                         <div class="notice notice-warning inline"><p><?php esc_html_e( 'Attenzione: attivando Google Tag Manager, il plugin non caricherà né invierà eventi a GA4 o Facebook Pixel lato client. Configura questi tag direttamente nel container GTM per evitare duplicazioni.', 'ati' ); ?></p></div>
                         <label><input type="checkbox" name="ati_disable_logged_in" value="1" <?php checked( get_option( 'ati_disable_logged_in', false ), '1' ); ?> /> <?php esc_html_e( 'Disattiva per utenti loggati', 'ati' ); ?></label>
                     </fieldset>
+                </td>
+            </tr>
+            <tr>
+                <th scope="row"><?php esc_html_e( 'Campi hidden nei form', 'ati' ); ?></th>
+                <td>
+                    <label><input type="checkbox" name="ati_enable_form_fields" value="1" <?php checked( get_option( 'ati_enable_form_fields', '1' ), '1' ); ?> /> <?php esc_html_e( 'Compila automaticamente i campi hidden riconosciuti', 'ati' ); ?></label>
+                    <p class="description">
+                        Se un form contiene input hidden con questi <code>name</code>, il plugin li compila prima dell'invio:<br />
+                        <code>fbclid</code>, <code>gclid</code>, <code>fbc</code>, <code>fbp</code>, <code>gbraid</code>, <code>wbraid</code>,
+                        <code>msclkid</code>, <code>ttclid</code>, <code>twclid</code>, <code>li_fat_id</code>,
+                        <code>utm_source</code>, <code>utm_medium</code>, <code>utm_campaign</code>, <code>utm_term</code>, <code>utm_content</code>, <code>external_id</code>.<br />
+                        Riconosce anche i nomi con parentesi (es. Elementor <code>form_fields[fbclid]</code>), l'id <code>form-field-fbclid</code>,
+                        la classe <code>ati-field-fbclid</code> e l'attributo <code>data-ati-field="fbclid"</code>.
+                        I campi già valorizzati non vengono sovrascritti; se un valore non è disponibile il campo resta vuoto
+                        (<code>fbp</code> richiede il cookie <code>_fbp</code> del Pixel, quindi il consenso marketing).
+                    </p>
                 </td>
             </tr>
             <tr>

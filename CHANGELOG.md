@@ -2,6 +2,35 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.11.0] - 2026-07-29 — Compilazione automatica dei campi hidden nei form
+
+### Aggiunto
+- **Campi hidden compilati automaticamente** (`assets/js/form-fields.js`,
+  `includes/form-fields.php`): se un form contiene input hidden con nomi noti, il plugin
+  li valorizza prima dell'invio, così il provider del form li salva e li inoltra a
+  CRM/n8n/Meta CAPI. Nomi riconosciuti: `fbclid`, `gclid`, `fbc`, `fbp`, `gbraid`,
+  `wbraid`, `msclkid`, `ttclid`, `twclid`, `li_fat_id`, `utm_source`, `utm_medium`,
+  `utm_campaign`, `utm_term`, `utm_content`, `external_id`. Il match funziona anche su
+  `form_fields[fbclid]` (Elementor), id `form-field-fbclid`, classe `ati-field-fbclid` e
+  attributo `data-ati-field="fbclid"`.
+- Sorgenti dei valori: parametri URL, cookie `_fbc` / `_fbp` / `_gcl_aw` / `fst_uid` e
+  persistenza dei click id (sessionStorage sempre, cookie `fst_clid` 90 giorni **solo con
+  consenso marketing**), così il click id sopravvive alla navigazione fino al form.
+- Nuova impostazione **"Campi hidden nei form"** (`ati_enable_form_fields`, attiva di
+  default) nel tab Generale.
+- `tests/form-fields-tests.js`: 25 test con DOM simulato (`node tests/form-fields-tests.js`).
+
+### Note
+- Nessun identificatore viene inventato: se il valore non esiste il campo resta vuoto.
+  Unica costruzione ammessa è `fbc` = `fb.1.<timestamp>.<fbclid>` (stesso formato di
+  `fst_build_user_data()`); il cookie `_fbc` reale ha sempre la precedenza. `fbp` è
+  copiato solo dal cookie `_fbp` del Pixel, mai generato.
+- I campi già valorizzati dal sito non vengono sovrascritti; i campi hidden non
+  riconosciuti (es. `_wpnonce`) non vengono toccati.
+- La compilazione viene ripetuta sui form inseriti via AJAX/popup, al cambio di consenso
+  e in fase di **capture** del submit: i cookie `_fbp`/`_fbc` che compaiono dopo
+  l'accettazione del banner finiscono comunque nell'invio.
+
 ## [0.10.0] - 2026-07-28 — Pagina settings unificata a tab + credenziali Meta per n8n
 
 ### Modificato

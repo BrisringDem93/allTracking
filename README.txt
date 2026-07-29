@@ -2,7 +2,7 @@
 
 Un plugin WordPress che consente di installare rapidamente Facebook Pixel, Google Analytics 4 e Google Tag Manager senza toccare il codice.
 
-Versione: 0.9.0
+Versione: 0.11.0
 
 ## GA4 "server-side first" (conversioni confermate)
 
@@ -25,6 +25,60 @@ Configurazione: **Impostazioni → Tracking Integration → tab "GA4 Server-Side
 `docs/ga4-configuration.md`; audit e razionale in `docs/ga4-server-side-audit.md`;
 matrice di test in `docs/ga4-test-matrix.md`. Le nuove funzionalità sono **disattivate di
 default** dopo l'aggiornamento e vanno abilitate dall'amministratore.
+
+## Campi hidden compilati automaticamente nei form
+
+Se un form contiene input hidden con nomi riconosciuti, il plugin li compila prima
+dell'invio: il provider del form li salva e li inoltra a CRM / n8n / Meta CAPI.
+Basta aggiungerli al form, senza altro codice:
+
+```html
+<input type="hidden" name="fbclid" value="">
+<input type="hidden" name="gclid" value="">
+<input type="hidden" name="fbc" value="">
+<input type="hidden" name="fbp" value="">
+```
+
+Nomi riconosciuti: `fbclid`, `gclid`, `fbc`, `fbp`, `gbraid`, `wbraid`, `msclkid`,
+`ttclid`, `twclid`, `li_fat_id`, `utm_source`, `utm_medium`, `utm_campaign`,
+`utm_term`, `utm_content`, `external_id`.
+
+Il campo viene riconosciuto anche quando il form builder altera il `name`:
+
+- `form_fields[fbclid]` (Elementor: si usa l'ultima parentesi);
+- id `form-field-fbclid` o `field-fbclid`;
+- classe CSS `ati-field-fbclid` (utile con WPForms/Gravity, che generano `name` numerici);
+- attributo `data-ati-field="fbclid"` (match esplicito, ha la precedenza).
+
+Da dove arrivano i valori:
+
+| Campo | Sorgenti, in ordine di precedenza |
+| --- | --- |
+| `fbclid` | parametro URL → coda del cookie `_fbc` → click id memorizzato |
+| `gclid` | parametro URL → coda del cookie `_gcl_aw` → click id memorizzato |
+| `fbc` | cookie `_fbc` → costruito come `fb.1.<timestamp>.<fbclid>` |
+| `fbp` | **solo** cookie `_fbp` del Pixel (mai generato) |
+| `external_id` | cookie `fst_uid` (pseudonimo del plugin) |
+| `utm_*`, altri click id | parametro URL → valore memorizzato |
+
+Regole di sicurezza:
+
+- **Nessun identificatore viene inventato**: se il valore non è disponibile il campo
+  resta vuoto. L'unica costruzione ammessa è `fbc`, nel formato ufficiale e con la
+  stessa logica già usata lato server da `fst_build_user_data()`.
+- I campi **già valorizzati** dal sito o dall'utente non vengono sovrascritti; i campi
+  hidden non riconosciuti (`_wpnonce`, `redirect_to`, ...) non vengono toccati.
+- I click id vengono memorizzati per sopravvivere alla navigazione fino al form:
+  in `sessionStorage` sempre, nel cookie `fst_clid` (90 giorni) **solo con consenso
+  marketing**, come già avviene per `fst_uid`.
+- La compilazione viene ripetuta sui form inseriti dopo il caricamento (AJAX, popup,
+  multistep), al cambio di consenso e in fase di *capture* del `submit`: i cookie
+  `_fbp`/`_fbc`, che compaiono solo dopo l'accettazione del banner, finiscono comunque
+  nell'invio.
+
+La funzione è attiva di default e si disattiva da **Impostazioni → Tracking Integration
+→ Generale → "Campi hidden nei form"**. Con `WP_DEBUG` attivo la console mostra quali
+campi vengono compilati. Test: `node tests/form-fields-tests.js`.
 
 ## Installazione
 
