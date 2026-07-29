@@ -110,8 +110,8 @@ function fst_ajax_pageview_handler() {
     
     // STEP 1: Log di debug per verificare che la funzione venga chiamata
     if ( WP_DEBUG ) {
-        error_log( '[FST] 🎯 AJAX PageView handler chiamato' );
-        error_log( '[FST] POST data: ' . print_r( $_POST, true ) );
+        error_log( '[FST] AJAX PageView handler chiamato' );
+        // PII-safe: non logghiamo i dati POST completi.
     }
     
     // STEP 2: Sanitizza e valida i dati ricevuti dal JavaScript
@@ -144,8 +144,7 @@ function fst_ajax_pageview_handler() {
     
     // DEBUG: Log dell'evento completo prima dell'invio
     if ( WP_DEBUG ) {
-        error_log( '[FST] 📤 Evento PageView completo da inviare:' );
-        error_log( '[FST] ' . print_r( $event, true ) );
+        error_log( '[FST] Evento PageView pronto (id: ' . $event_id . ')' );
     }
     
     // NUOVO: Aggiunge fbclid ai custom_data se presente
@@ -164,9 +163,13 @@ function fst_ajax_pageview_handler() {
     // STEP 5: Invia l'evento al webhook n8n (se configurato nelle impostazioni)
     fst_send_to_n8n( [ 'data' => [ $event ] ] );
     
-    // STEP 6: Invia anche a GA4 server-side (se abilitato nelle impostazioni)
-    if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
-        fst_send_to_ga4( 'page_view', [ 'page_title' => $page_title ] );
+    // STEP 6: PageView server-side GA4 (MODALITÀ AVANZATA, OFF di default).
+    // Il Google Tag invia già page_view dal browser: per evitare duplicazioni,
+    // il page_view server-side parte solo se l'amministratore lo abilita
+    // esplicitamente (ati_ga4_server_pageview) oltre al legacy ati_enable_ga4_server.
+    if ( get_option( 'ati_enable_ga4_server' ) === '1'
+        && class_exists( 'ATI_GA4_Config' ) && ATI_GA4_Config::server_pageview_enabled() ) {
+        fst_send_to_ga4( 'page_view', [ 'page_title' => $page_title ], $page_url );
     }
 
     // STEP 7: Termina l'esecuzione AJAX con messaggio di conferma
@@ -279,32 +282,40 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
 
     // STEP 5: Log di debug per monitoraggio
     if ( WP_DEBUG ) {
-        error_log( '[FST] 🎯 ' . $type . ' da JavaScript: ID ' . $event_id );
-        error_log( '[FST] 📤 Evento ' . $type . ' completo da inviare:' );
-        error_log( '[FST] ' . print_r( $event, true ) );
+        error_log( '[FST] ' . $type . ' da JavaScript: ID ' . $event_id );
+        // PII-safe: non logghiamo l'evento completo (può contenere user_data).
     }
 
     // STEP 6: Invia a n8n (webhook personalizzato)
     fst_send_to_n8n( [ 'data' => [ $event ] ] );
     
-    // STEP 7: Invia anche a GA4 server-side (se abilitato)
+    // STEP 7: GA4 server-side legacy (Measurement Protocol).
+    //
+    // IMPORTANTE (server-side first): quando la nuova pipeline "eventi confermati"
+    // è attiva, il submit generico NON deve più generare generate_lead. In quel caso
+    // Lead/FormSubmit vengono ESCLUSI da questo percorso legacy: il generate_lead
+    // parte solo dopo la conferma reale del provider (ati_track_confirmed_event).
     if ( get_option( 'ati_enable_ga4_server' ) === '1' ) {
         // Mappa i nomi degli eventi ai nomi ufficiali GA4 (Measurement Protocol)
         $ga4_name_map = [
-            'Lead'         => 'generate_lead',   // Evento raccomandato GA4 per form lead
-            'FormSubmit'   => 'generate_lead',
             'FormStart'    => 'form_start',       // Evento raccomandato GA4 per inizio form
             'deepInterest' => 'deep_interest',    // Evento personalizzato
             'deepPlus'     => 'deep_plus',        // Evento personalizzato
         ];
-        $ga4_event_name = isset( $ga4_name_map[ $type ] )
-            ? $ga4_name_map[ $type ]
-            // Fallback camelCase → snake_case: lcfirst() abbassa il primo carattere (evita underscore
-            // iniziale), poi il regex aggiunge '_' davanti ad ogni lettera maiuscola rimanente.
-            // Nota: non gestisce acronyms consecutivi (es. "HTTPError" → "h_t_t_p_error");
-            // tutti i tipi previsti (ButtonClick ecc.) producono risultati corretti.
-            : strtolower( preg_replace( '/([A-Z])/', '_$1', lcfirst( $type ) ) );
-        fst_send_to_ga4( $ga4_event_name, [ 'label' => $label ] );
+
+        // SERVER-SIDE FIRST: il submit DOM generico NON è una conversione confermata.
+        // Lead/FormSubmit non generano MAI generate_lead da questo percorso legacy.
+        // Il generate_lead parte esclusivamente dalla pipeline "eventi confermati"
+        // (ati_track_confirmed_event) dopo la conferma reale del provider.
+        $is_unconfirmed_lead = in_array( $type, [ 'Lead', 'FormSubmit' ], true );
+
+        if ( ! $is_unconfirmed_lead ) {
+            $ga4_event_name = isset( $ga4_name_map[ $type ] )
+                ? $ga4_name_map[ $type ]
+                // Fallback camelCase → snake_case.
+                : strtolower( preg_replace( '/([A-Z])/', '_$1', lcfirst( $type ) ) );
+            fst_send_to_ga4( $ga4_event_name, [ 'label' => $label ], $page );
+        }
     }
 
     // STEP 8: Restituisce risposta JSON di successo
@@ -336,7 +347,7 @@ function fst_rest_event_handler( WP_REST_Request $req ) {
 function fst_build_user_data( $fbclid = '' ) {
     // DEBUG: Log di tutti i cookie disponibili
     if ( WP_DEBUG ) {
-        error_log( '[FST] 🍪 Cookie disponibili: ' . print_r( $_COOKIE, true ) );
+        error_log( '[FST] Costruzione user_data (cookie non loggati per privacy)' );
     }
     
     // Gestione cookie _fbp con log dettagliato
@@ -344,11 +355,11 @@ function fst_build_user_data( $fbclid = '' ) {
     if ( isset( $_COOKIE['_fbp'] ) ) {
         $fbp_value = sanitize_text_field( $_COOKIE['_fbp'] );
         if ( WP_DEBUG ) {
-            error_log( '[FST] 📘 Cookie _fbp trovato: ' . $fbp_value );
+            error_log( '[FST] Cookie _fbp presente' ); // Valore non loggato (identificatore).
         }
     } else {
         if ( WP_DEBUG ) {
-            error_log( '[FST] ⚠️ Cookie _fbp NON trovato nei cookie HTTP' );
+            error_log( '[FST] Cookie _fbp assente' );
         }
     }
     
@@ -371,40 +382,20 @@ function fst_build_user_data( $fbclid = '' ) {
     if ( isset( $_COOKIE['_fbc'] ) ) {
         $user_data['fbc'] = sanitize_text_field( $_COOKIE['_fbc'] );
         if ( WP_DEBUG ) {
-            error_log( '[FST] 📘 _fbc cookie esistente: ' . $user_data['fbc'] );
+            error_log( '[FST] _fbc cookie presente' ); // Valore non loggato.
         }
     } elseif ( ! empty( $fbclid ) ) {
-        // Se non c'è cookie _fbc ma abbiamo fbclid, costruisce il valore manualmente
-        // Formato _fbc: fb.{subdomain-index}.{timestamp}.{fbclid}
-        // Determine the subdomain index (0 for 'com', 1 for 'example.com', 2 for 'www.example.com')
-        $subdomain_index = 1; // Default: assume cookie is set on example.com
-
-        // Attempt to determine the correct subdomain index based on the referring URL
-        $referrer = $_SERVER['HTTP_REFERER'] ?? '';
-        if ( ! empty( $referrer ) ) {
-            $referrer_parts = parse_url( $referrer );
-            if ( ! empty( $referrer_parts['host'] ) ) {
-            // Check for fb*.example.com or m.example.com patterns in the referrer host
-            if ( preg_match( '/^fb(\d+)\./', $referrer_parts['host'], $matches ) ) {
-                $subdomain_index = (int) $matches[1];
-            } elseif ( strpos( $referrer_parts['host'], 'm.' ) === 0 ) {
-                $subdomain_index = 0; // Consider 'm' as the base domain
-            }
-            }
-        }
-        $timestamp = time();
-        $fbc_value = "fb.{$subdomain_index}.{$timestamp}.{$fbclid}";
+        // Se non c'è cookie _fbc ma abbiamo fbclid, costruisce il valore manualmente.
+        $fbc_value        = fst_build_fbc_from_fbclid( $fbclid );
         $user_data['fbc'] = $fbc_value;
-        
+
         if ( WP_DEBUG ) {
-            error_log( '[FST] 📘 _fbc costruito da FBCLID: ' . $fbc_value );
+            error_log( '[FST] _fbc costruito da FBCLID' ); // Valore non loggato.
         }
-        
-        // OPZIONALE: Imposta anche il cookie nel browser per le prossime richieste
-        setcookie( '_fbc', $fbc_value, time() + 7776000, '/', '', false, false ); // 90 giorni
-        if ( WP_DEBUG ) {
-            error_log( '[FST] 🍪 Cookie _fbc impostato: ' . $fbc_value );
-        }
+
+        // Persiste il cookie: le richieste successive (e i campi hidden dei form)
+        // useranno lo STESSO valore inviato alla Conversions API.
+        fst_persist_fbc_cookie( $fbc_value );
 
     } else {
         $user_data['fbc'] = null;
@@ -415,20 +406,142 @@ function fst_build_user_data( $fbclid = '' ) {
     
     // DEBUG: Log finale dei dati user_data costruiti
     if ( WP_DEBUG ) {
-        error_log( '[FST] 📊 User data costruiti:' );
-        error_log( '[FST]   - external_id: ' . $user_data['external_id'] );
-        error_log( '[FST]   - fbp: ' . ( $user_data['fbp'] ? $user_data['fbp'] : 'NULL' ) );
-        error_log( '[FST]   - fbc: ' . ( $user_data['fbc'] ? $user_data['fbc'] : 'NULL' ) );
-        error_log( '[FST]   - IP: ' . $user_data['client_ip_address'] );
-        error_log( '[FST]   - User Agent: ' . substr( $user_data['client_user_agent'], 0, 50 ) . '...' );
+        // PII-safe: logghiamo solo la PRESENZA dei campi, mai i valori (external_id, fbp, fbc, IP, UA).
+        error_log( '[FST] User data costruiti: ' . wp_json_encode( array(
+            'external_id' => ! empty( $user_data['external_id'] ),
+            'fbp'         => ! empty( $user_data['fbp'] ),
+            'fbc'         => ! empty( $user_data['fbc'] ),
+            'ip'          => ! empty( $user_data['client_ip_address'] ),
+            'ua'          => ! empty( $user_data['client_user_agent'] ),
+        ) ) );
     }
     
     return $user_data;
 }
 
 /**
+ * Costruisce il valore del cookie _fbc a partire da un fbclid.
+ *
+ * Formato ufficiale Meta: fb.{subdomain-index}.{creation-time}.{fbclid}
+ * dove creation-time è il tempo UNIX in MILLISECONDI (come lo scrive il Pixel).
+ *
+ * @param string $fbclid Facebook Click ID.
+ * @return string Valore _fbc, stringa vuota se il fbclid è vuoto.
+ * @since 0.11.0
+ */
+function fst_build_fbc_from_fbclid( $fbclid ) {
+    $fbclid = trim( (string) $fbclid );
+    if ( '' === $fbclid ) {
+        return '';
+    }
+
+    // Indice sottodominio (0 = 'com', 1 = 'example.com', 2 = 'www.example.com').
+    $subdomain_index = 1; // Default: cookie impostato su example.com.
+
+    // Il referrer permette di riconoscere i domini fb*.example.com / m.example.com.
+    $referrer = $_SERVER['HTTP_REFERER'] ?? '';
+    if ( ! empty( $referrer ) ) {
+        $referrer_parts = wp_parse_url( $referrer );
+        if ( ! empty( $referrer_parts['host'] ) ) {
+            if ( preg_match( '/^fb(\d+)\./', $referrer_parts['host'], $matches ) ) {
+                $subdomain_index = (int) $matches[1];
+            } elseif ( strpos( $referrer_parts['host'], 'm.' ) === 0 ) {
+                $subdomain_index = 0; // 'm' considerato dominio base.
+            }
+        }
+    }
+
+    // Millisecondi: è ciò che specifica Meta e ciò che scrive il Pixel.
+    $creation_time = (int) round( microtime( true ) * 1000 );
+
+    return "fb.{$subdomain_index}.{$creation_time}.{$fbclid}";
+}
+
+/**
+ * Persiste il cookie _fbc (90 giorni), SOLO con consenso marketing.
+ *
+ * Senza consenso non viene scritto nulla sul browser: il valore `fbc` continua ad
+ * arrivare al form perché assets/js/form-fields.js lo ricostruisce dal `fbclid`
+ * presente nell'URL, senza toccare cookie o storage. Stessa regola già applicata
+ * a `fst_uid` da fst_get_uid().
+ *
+ * Il cookie NON è httponly: deve restare leggibile dal Pixel e dallo script che
+ * compila i campi hidden dei form. $_COOKIE viene aggiornato solo quando il
+ * cookie viene davvero inviato, così rispecchia sempre lo stato del browser.
+ *
+ * @param string $fbc_value Valore _fbc da persistere.
+ * @return bool True se il cookie è stato inviato.
+ * @since 0.11.0
+ */
+function fst_persist_fbc_cookie( $fbc_value ) {
+    $fbc_value = trim( (string) $fbc_value );
+    if ( '' === $fbc_value ) {
+        return false;
+    }
+
+    // GDPR: nessun cookie senza consenso marketing, in nessun caso.
+    if ( ! ati_has_marketing_consent() ) {
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[FST] Cookie _fbc NON impostato: consenso marketing assente' );
+        }
+        return false;
+    }
+
+    if ( headers_sent() ) {
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[FST] Cookie _fbc non impostato: header gia inviati' );
+        }
+        return false;
+    }
+
+    setcookie( '_fbc', $fbc_value, time() + 7776000, '/', '', false, false ); // 90 giorni.
+    $_COOKIE['_fbc'] = $fbc_value;
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[FST] Cookie _fbc impostato' );
+    }
+    return true;
+}
+
+/**
+ * Cattura il fbclid dall'URL e persiste _fbc PRIMA che la pagina venga generata.
+ *
+ * Senza questo hook il cookie nasceva solo al ritorno della chiamata AJAX/REST di
+ * tracciamento: i campi hidden dei form compilati prima di quel momento restavano
+ * senza `fbc`, e il valore poteva differire da quello inviato alla CAPI.
+ * Agganciato a `template_redirect`: gli header non sono ancora stati inviati,
+ * quindi il cookie è già disponibile al primo byte di HTML.
+ *
+ * La scrittura avviene solo con consenso marketing (vedi fst_persist_fbc_cookie()).
+ * Senza consenso il campo `fbc` del form viene comunque compilato, ricostruito
+ * lato client dal `fbclid` dell'URL: nessuno storage coinvolto.
+ *
+ * @return void
+ * @since 0.11.0
+ */
+function fst_capture_fbclid_from_url() {
+    if ( is_admin() || wp_doing_ajax() ) {
+        return;
+    }
+    if ( get_option( 'ati_disable_logged_in', false ) && is_user_logged_in() ) {
+        return;
+    }
+    // Cookie già presente (Pixel o visita precedente): è la fonte di verità.
+    if ( isset( $_COOKIE['_fbc'] ) && '' !== trim( (string) $_COOKIE['_fbc'] ) ) {
+        return;
+    }
+
+    $fbclid = isset( $_GET['fbclid'] ) ? sanitize_text_field( wp_unslash( $_GET['fbclid'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification
+    if ( '' === $fbclid ) {
+        return;
+    }
+
+    fst_persist_fbc_cookie( fst_build_fbc_from_fbclid( $fbclid ) );
+}
+add_action( 'template_redirect', 'fst_capture_fbclid_from_url' );
+
+/**
  * Genera o recupera pseudonimo utente persistente
- * 
+ *
  * Crea un identificatore unico per ogni visitatore che persiste tra le sessioni
  * ma rimane anonimo. Utilizza:
  * 
@@ -486,7 +599,10 @@ function fst_get_uid() {
  * - ati_server_endpoint: URL del webhook n8n
  * - ati_server_auth_key: Nome header autenticazione (opzionale)
  * - ati_server_auth_value: Valore header autenticazione (opzionale)
- * 
+ * - ati_meta_dataset_id: Pixel/Dataset ID Meta incluso nel payload (opzionale,
+ *   fallback su ati_fb_pixel_id)
+ * - ati_meta_capi_token: Access token Meta CAPI incluso nel payload (opzionale)
+ *
  * @param array $payload Dati evento formattati per Facebook API
  * @return void
  * @since 1.1
@@ -497,7 +613,22 @@ function fst_send_to_n8n( array $payload ) {
     if ( ! $endpoint ) {
         return; // Se non configurato, esce silenziosamente
     }
-    
+
+    // STEP 1b: Credenziali Meta CAPI opzionali. Se configurate viaggiano nel
+    // payload (accanto a "data", stesso formato del body della Graph API):
+    // il workflow n8n le legge dalla richiesta invece di tenerle hardcodate.
+    $dataset_id = trim( (string) get_option( 'ati_meta_dataset_id', '' ) );
+    if ( '' === $dataset_id ) {
+        $dataset_id = trim( (string) get_option( 'ati_fb_pixel_id', '' ) ); // Fallback: pixel client-side.
+    }
+    $capi_token = trim( (string) get_option( 'ati_meta_capi_token', '' ) );
+    if ( '' !== $dataset_id ) {
+        $payload['pixel_id'] = $dataset_id;
+    }
+    if ( '' !== $capi_token ) {
+        $payload['access_token'] = $capi_token;
+    }
+
     // STEP 2: Configura autenticazione (se necessaria)
     $auth_key = trim( get_option( 'ati_server_auth_key', '' ) );   // Nome header (es: "X-API-Key")
     $auth_val = trim( get_option( 'ati_server_auth_value', '' ) ); // Valore header (es: "abc123")
@@ -513,9 +644,8 @@ function fst_send_to_n8n( array $payload ) {
     
     // STEP 4: Log dettagliato per debugging (solo se WP_DEBUG è attivo)
     if ( WP_DEBUG ) {
-        error_log( '[FST] ► Invio a n8n – ' . $payload['data'][0]['event_name'] . ' ID: ' . $payload['data'][0]['event_id'] );
-        error_log( '[FST]   Endpoint : ' . $endpoint );
-        error_log( '[FST]   Payload  : ' . $body );
+        error_log( '[FST] Invio a n8n - ' . $payload['data'][0]['event_name'] . ' ID: ' . $payload['data'][0]['event_id'] );
+        // PII-safe: endpoint e payload completi (che contengono user_data) non vengono loggati.
     }
     
     // STEP 5: Invia richiesta POST al webhook n8n
@@ -537,8 +667,7 @@ function fst_send_to_n8n( array $payload ) {
     
     // Log della risposta per monitoring
     if ( WP_DEBUG ) {
-        error_log( '[FST] ◄ Risposta n8n: HTTP ' . $code );
-        error_log( '[FST]   Response: ' . $res_body );
+        error_log( '[FST] Risposta n8n: HTTP ' . $code );
     }
     
     // Logga errori HTTP (se diverso da 200 OK)
@@ -564,58 +693,55 @@ function fst_send_to_n8n( array $payload ) {
  * - ati_ga4_api_secret: Secret per Measurement Protocol
  * - ati_enable_ga4_server: deve essere "1" per abilitare
  * 
+ * NOTA (server-side first): questa funzione è il percorso GA4 LEGACY, usato solo
+ * per il PageView server-side avanzato e per gli eventi non-lead quando il vecchio
+ * invio è attivo. Le conversioni confermate (generate_lead) passano invece dalla
+ * nuova pipeline (ati_track_confirmed_event -> coda -> ATI_GA4_Adapter).
+ *
+ * Il client_id/session_id sono quelli REALI del Google Tag (cookie _ga/_ga_*),
+ * NON viene più generato un UUID casuale per richiesta. Include ora anche
+ * timestamp_micros, session_id ed engagement_time_msec.
+ *
  * @param string $eventName Nome evento GA4 (es: "page_view", "button_click")
- * @param array $params Parametri personalizzati dell'evento
+ * @param array  $params    Parametri personalizzati dell'evento
+ * @param string $page_url  URL pagina sorgente (opzionale)
  * @return void
  * @since 1.1
  */
-function fst_send_to_ga4( string $eventName, array $params = [] ) {
-    // STEP 1: Verifica configurazione GA4 server-side
-    $measurement_id = trim( get_option( 'ati_ga4_server_id', '' ) );  // Usa ID specifico per server
-    $api_secret     = trim( get_option( 'ati_ga4_api_secret', '' ) );
-    
-    if ( empty( $measurement_id ) || empty( $api_secret ) ) {
-        return; // Se non configurato, esce silenziosamente
+function fst_send_to_ga4( string $eventName, array $params = [], string $page_url = '' ) {
+    // Richiede il sottosistema GA4 (centralizza config, endpoint, client context).
+    if ( ! class_exists( 'ATI_GA4_Config' ) || ! class_exists( 'ATI_GA4_Adapter' ) ) {
+        return;
     }
-    
-    // STEP 2: Costruisce URL endpoint GA4 Measurement Protocol
-    $endpoint = 'https://www.google-analytics.com/mp/collect?measurement_id=' . 
-                rawurlencode( $measurement_id ) . '&api_secret=' . rawurlencode( $api_secret );
-    
-    // STEP 3: Costruisce payload nel formato GA4
-    $client_id = fst_get_uid();
-    // GA4 richiede un client_id non vuoto.
-    // Fallback 1: cookie _ga (formato GA1.x.XXXXXXXXXX.XXXXXXXXXX) — preserva la sessione GA4.
-    // Fallback 2: UUID casuale di richiesta (limita cross-session attribution, usato solo come sicurezza).
-    if ( empty( $client_id ) && isset( $_COOKIE['_ga'] ) ) {
-        $ga_parts = explode( '.', $_COOKIE['_ga'] );
-        if ( count( $ga_parts ) >= 4 ) {
-            // Sanitizza: il client_id GA4 contiene solo cifre e un punto separatore.
-            $part2 = preg_replace( '/[^0-9]/', '', $ga_parts[2] );
-            $part3 = preg_replace( '/[^0-9]/', '', $ga_parts[3] );
-            if ( $part2 !== '' && $part3 !== '' ) {
-                $client_id = $part2 . '.' . $part3;
-            }
+    if ( ! ATI_GA4_Config::is_ready() ) {
+        return; // Measurement ID + API secret non configurati.
+    }
+
+    // client_id/session_id reali dal Google Tag (cookie first-party). Nessun UUID casuale.
+    $ctx = ATI_GA4_Client_Context::from_cookies();
+    if ( '' === $ctx['client_id'] ) {
+        // Attribuzione degradata esplicita: senza client_id reale non si inventa un ID.
+        if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+            error_log( '[FST] GA4 legacy: client_id reale assente, evento non inviato (' . sanitize_key( $eventName ) . ')' );
         }
+        return;
     }
-    if ( empty( $client_id ) ) {
-        $client_id = wp_generate_uuid4();
+
+    $event = ATI_Event::from_array( array(
+        'event_name'           => $eventName,
+        'event_timestamp_micros' => (int) round( microtime( true ) * 1000000 ),
+        'client_id'            => $ctx['client_id'],
+        'session_id'           => $ctx['session_id'],
+        'engagement_time_msec' => 1,
+        'page_location'        => $page_url,
+        'source'               => 'server_pageview',
+        'params'               => $params,
+    ) );
+
+    if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) {
+        error_log( '[FST] GA4 legacy invio: ' . sanitize_key( $eventName ) );
     }
-    $body = [
-        'client_id' => $client_id,                              // Stesso ID utente di Facebook (o fallback)
-        'events'    => [ [ 'name' => $eventName, 'params' => $params ] ], // Array eventi
-    ];
-    
-    // STEP 4: Log di debug
-    if ( WP_DEBUG ) {
-        error_log( '[FST] ▶️ GA4: ' . $eventName );
-    }
-    
-    // STEP 5: Invia a GA4 (fire-and-forget, senza gestione errori dettagliata)
-    wp_remote_post( $endpoint, [
-        'headers' => [ 'Content-Type' => 'application/json' ],
-        'body'    => wp_json_encode( $body ),
-        'timeout' => 5,
-    ] );
+
+    ATI_GA4_Adapter::send( $event );
 }
 ?>

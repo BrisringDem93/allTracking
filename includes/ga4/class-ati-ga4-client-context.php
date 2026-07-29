@@ -1,0 +1,84 @@
+<?php
+/**
+ * ATI_GA4_Client_Context — Recupero del contesto identità GA4 lato server.
+ *
+ * Il client_id e il session_id "reali" sono generati dal Google Tag nel browser
+ * e persistiti nei cookie first-party (_ga e _ga_<stream>). Questi cookie vengono
+ * inviati con la richiesta (submit del form / chiamata REST), quindi il server può
+ * ricostruire l'identità GA4 reale SENZA generare UUID casuali.
+ *
+ * PRIORITÀ dell'identità:
+ *   1. gtag('get', measurementId, 'client_id'|'session_id')  -> bridge JS (autoritativo)
+ *   2. parsing dei cookie _ga / _ga_*  -> SOLO fallback documentato (questo file)
+ *   3. nessuna identità inventata (mai UUID casuali)
+ *
+ * ATTENZIONE: il formato dei cookie _ga/_ga_* NON è un'API pubblica stabile di
+ * Google e può cambiare senza preavviso. Il parsing è difensivo: in caso di formato
+ * non riconosciuto ritorna stringa vuota (degrado esplicito), senza inventare valori.
+ *
+ * @package QuickTrackingIntegration\GA4
+ */
+
+if ( ! defined( 'ABSPATH' ) ) {
+	exit;
+}
+
+/**
+ * Estrattore contesto GA4 dai cookie.
+ */
+class ATI_GA4_Client_Context {
+
+	/**
+	 * Ricostruisce client_id e session_id dai cookie GA4.
+	 *
+	 * @return array{client_id:string,session_id:string}
+	 */
+	public static function from_cookies() {
+		return array(
+			'client_id'  => self::client_id_from_ga_cookie(),
+			'session_id' => self::session_id_from_ga_cookie(),
+		);
+	}
+
+	/**
+	 * client_id dal cookie _ga (formato GA1.1.XXXXXXXXXX.YYYYYYYYYY -> "XXXXXXXXXX.YYYYYYYYYY").
+	 *
+	 * @return string
+	 */
+	public static function client_id_from_ga_cookie() {
+		if ( ! isset( $_COOKIE['_ga'] ) ) {
+			return '';
+		}
+		$parts = explode( '.', (string) $_COOKIE['_ga'] );
+		if ( count( $parts ) < 4 ) {
+			return '';
+		}
+		$p2 = preg_replace( '/[^0-9]/', '', $parts[2] );
+		$p3 = preg_replace( '/[^0-9]/', '', $parts[3] );
+		if ( '' === $p2 || '' === $p3 ) {
+			return '';
+		}
+		return $p2 . '.' . $p3;
+	}
+
+	/**
+	 * session_id dal cookie di sessione _ga_<stream> (formato GS1.1.<session_id>.<...>).
+	 * In GA4 il timestamp di inizio sessione funge da session_id nel Measurement Protocol.
+	 *
+	 * @return string
+	 */
+	public static function session_id_from_ga_cookie() {
+		foreach ( $_COOKIE as $name => $value ) {
+			if ( 0 !== strpos( (string) $name, '_ga_' ) ) {
+				continue;
+			}
+			// Due formati noti (formato NON stabile, parsing difensivo):
+			// - GS1.1.<sessionId>.<sessionNumber>.<engaged>.<ts>...
+			// - GS2.1.s<sessionId>$o<n>$g<n>$t<ts>...   (con prefisso "s" e separatori "$")
+			if ( preg_match( '/^GS\d+\.\d+\.s?(\d+)/', (string) $value, $m ) ) {
+				return $m[1];
+			}
+		}
+		return '';
+	}
+}
