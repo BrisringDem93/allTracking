@@ -89,7 +89,7 @@ function makeEnv(options) {
       expose: true,
       debug: false,
       rules: [],
-      allowlist: ['wordpress*', 'wp-*', 'PHPSESSID', 'cmplz_*', '_iub_cs-*', 'CookieConsent*', 'OptanonConsent', 'fst_*'],
+      allowlist: ['wordpress*', 'wp-*', 'PHPSESSID', 'cmplz_*', '_iub_cs-*', 'CookieConsent*', 'OptanonConsent', 'ati_*'],
       cmp: 'auto',
       customCookies: { marketing: '', analytics: '', preferences: '' },
       iubPurposes: { preferences: 3, analytics: 4, marketing: 5 },

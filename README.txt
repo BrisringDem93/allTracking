@@ -108,7 +108,7 @@ Tab **Impostazioni → Tracking Integration → "Blocco Cookie"**. La funzione i
 scrittura dei cookie non consentiti e cancella quelli già presenti, in base a regole
 **granulari per categoria di consenso**.
 
-È **attiva out of the box**: il plugin parte con 22 regole predefinite che bloccano i
+È **attiva out of the box**: il plugin parte con 25 regole predefinite che bloccano i
 cookie dei tracker più diffusi quando manca il consenso della loro categoria. Non serve
 configurare nulla, e con il consenso concesso il sito si comporta esattamente come prima.
 
@@ -122,6 +122,12 @@ Bloccati di default (in assenza del consenso corrispondente):
 | `_gcl_*`, `_gac_*`, `IDE`, `test_cookie` (Google Ads / DoubleClick) | marketing |
 | `_uet*` (Microsoft Ads), `li_fat_id`/`bcookie`/`lidc` (LinkedIn) | marketing |
 | `_tt*` (TikTok), `_pin_*` (Pinterest), `personalization_id` (X), `_scid*` (Snapchat) | marketing |
+| `lc_session_tk_*` (GoHighLevel / LeadConnector) | marketing |
+| `fst_uid`, `fst_clid` (questo plugin: scritti solo con il consenso, cancellati se viene revocato) | marketing |
+
+Chi aveva già salvato le proprie regole prima della 0.14.0 riceve le tre regole nuove
+(`lc_session_tk_*`, `fst_uid`, `fst_clid`) una sola volta, in coda e attive; se poi le
+elimina non vengono riproposte.
 
 **Come togliere o disattivare i blocchi**, dal tab:
 
@@ -192,7 +198,9 @@ che blocca. Alle regole predefinite se ne possono aggiungere quante se ne voglio
 Un'allowlist **non modificabile** protegge i cookie che romperebbero il sito o
 cancellerebbero la scelta di consenso: sessione WordPress (`wordpress*`, `wp-*`, `wp_*`),
 `PHPSESSID`, WooCommerce, i cookie dei CMP (`cmplz_*`, `_iub_cs-*`, `CookieConsent*`,
-`OptanonConsent`, `cookielawinfo-*`, `cky-*`, …) e quelli del plugin (`fst_*`, `ati_*`).
+`OptanonConsent`, `cookielawinfo-*`, `cky-*`, …) e quelli tecnici del plugin (`ati_*`).
+I cookie di tracciamento del plugin (`fst_uid`, `fst_clid`) non sono protetti: alla revoca
+del consenso marketing vanno cancellati, quindi sono coperti da regole predefinite.
 Si può estendere con un'allowlist personalizzata (un pattern per riga, con `*` e `?`), che
 ha la precedenza su qualunque regola. Inoltre, di default il blocco **non si applica agli
 utenti loggati** e le **cancellazioni di cookie non vengono mai bloccate** (altrimenti

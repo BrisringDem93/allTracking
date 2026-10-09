@@ -47,9 +47,11 @@ function ati_has_marketing_consent() {
         return $cached = true;
     }
 
-    // 3. iubenda: consenso globale oppure purpose 5 (Marketing)
+    // 3. iubenda: consenso globale oppure purpose 5 (Marketing).
+    // Il nome del cookie può essere numerico (_iub_cs-12345) o con prefisso
+    // (_iub_cs-s4597678): si accettano entrambi, come ATI_Cookie_Consent.
     foreach ( $_COOKIE as $name => $value ) {
-        if ( preg_match( '/^_iub_cs-\d+$/', $name ) ) {
+        if ( preg_match( '/^_iub_cs-[\w-]+$/', $name ) ) {
             $data = json_decode( urldecode( $value ), true );
             if ( is_array( $data ) && (
                 ( isset( $data['consent'] ) && true === $data['consent'] )
@@ -567,7 +569,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     if (cm && decodeURIComponent(cm[1]) === 'allow') return true;
 
     // 3. iubenda: consenso globale oppure purpose 5 (Marketing)
-    var iub = document.cookie.match(/(?:^|; )_iub_cs-\d+=([^;]+)/);
+    var iub = document.cookie.match(/(?:^|; )_iub_cs-[\w-]+=([^;]+)/);
     if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && (d.consent === true || (d.purposes && d.purposes[5] === true))) return true; } catch(e) {} }
 
     // 4. Cookiebot: CookieConsent con marketing:true
@@ -1232,7 +1234,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       }
     }
 
-    const iubendaCookie = findCookieName(/^_iub_cs-\d+$/);
+    const iubendaCookie = findCookieName(/^_iub_cs-[\w-]+$/);
     if (window._iub || iubendaCookie || scripts.some(function(src){ return /iubenda\.com/i.test(src); })) {
       add('iubenda', {
         global: !!window._iub,
@@ -1351,7 +1353,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     // 3. iubenda: consenso globale oppure purpose 5 (Marketing)
     var iubendaApiConsent = iubendaMarketingConsent(readIubendaPreferences());
     if (iubendaApiConsent !== null) return iubendaApiConsent;
-    var iub = document.cookie.match(/(?:^|; )_iub_cs-\d+=([^;]+)/);
+    var iub = document.cookie.match(/(?:^|; )_iub_cs-[\w-]+=([^;]+)/);
     if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); var iubCookieConsent = iubendaMarketingConsent(d); if (iubCookieConsent !== null) return iubCookieConsent; } catch(e) {} }
 
     // 4. Cookiebot: CookieConsent con marketing:true

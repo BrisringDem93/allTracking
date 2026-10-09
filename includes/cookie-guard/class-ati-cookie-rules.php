@@ -34,6 +34,17 @@ class ATI_Cookie_Rules {
 	const OPTION_ALLOWLIST = 'ati_cg_allowlist';
 
 	/**
+	 * Valori dei preset già proposti a questa installazione (vedi maybe_add_new_presets()).
+	 */
+	const OPTION_PRESETS_SEEN = 'ati_cg_presets_seen';
+
+	/**
+	 * Preset introdotti dopo la prima versione del blocco cookie (0.12.0): chi aveva già
+	 * salvato le proprie regole li riceve una sola volta tramite maybe_add_new_presets().
+	 */
+	const PRESETS_ADDED_LATER = array( 'fst_uid', 'fst_clid', 'lc_session_tk_' );
+
+	/**
 	 * Operatori di match disponibili.
 	 *
 	 * - equals       nome esattamente uguale
@@ -151,8 +162,9 @@ class ATI_Cookie_Rules {
 			'cookieyes*',
 			'cky-*',
 			'CookieScriptConsent',
-			// Cookie del plugin (consenso/attribuzione già gated dal consenso stesso).
-			'fst_*',
+			// Cookie tecnici del plugin. I cookie di tracciamento fst_uid/fst_clid NON
+			// sono qui: sono scritti solo con il consenso marketing, ma alla revoca
+			// del consenso vanno cancellati, quindi sono coperti da regole predefinite.
 			'ati_*',
 		);
 
@@ -200,6 +212,10 @@ class ATI_Cookie_Rules {
 			array( 'X / Twitter', 'marketing', 'equals', 'personalization_id', '' ),
 			array( 'Yandex Metrica', 'analytics', 'wildcard', '_ym_*', '' ),
 			array( 'Snapchat', 'marketing', 'wildcard', '_scid*', '' ),
+			array( 'GoHighLevel / LeadConnector (sessione)', 'marketing', 'starts_with', 'lc_session_tk_', '' ),
+			// Cookie del plugin: scritti solo con il consenso marketing, cancellati se viene revocato.
+			array( 'Quick Tracking Integration — pseudonimo (fst_uid)', 'marketing', 'equals', 'fst_uid', '' ),
+			array( 'Quick Tracking Integration — click id (fst_clid)', 'marketing', 'equals', 'fst_clid', '' ),
 		);
 
 		$out = array();
@@ -372,6 +388,58 @@ class ATI_Cookie_Rules {
 			return self::default_rules();
 		}
 		return is_array( $rules ) ? $rules : array();
+	}
+
+	/**
+	 * Aggiunge alle regole GIÀ SALVATE i preset introdotti dopo il salvataggio.
+	 *
+	 * Finché l'amministratore non salva, valgono le predefinite (che li includono già).
+	 * Chi ha salvato le proprie regole li riceve una volta sola, in coda e attivi: un
+	 * preset eliminato dopo non viene riproposto, e una regola già presente con lo
+	 * stesso valore non viene duplicata.
+	 *
+	 * @return int Numero di regole aggiunte.
+	 */
+	public static function maybe_add_new_presets() {
+		$values = array();
+		foreach ( self::presets() as $preset ) {
+			$values[] = (string) $preset['value'];
+		}
+
+		$seen = get_option( self::OPTION_PRESETS_SEEN, null );
+		if ( ! is_array( $seen ) ) {
+			// Installazione precedente a questo meccanismo: aveva già ricevuto tutti i
+			// preset tranne quelli aggiunti dopo.
+			$seen = array_values( array_diff( $values, self::PRESETS_ADDED_LATER ) );
+		}
+
+		$new = array_values( array_diff( $values, $seen ) );
+		if ( ! $new ) {
+			return 0;
+		}
+
+		$added = 0;
+		$saved = get_option( self::OPTION_RULES, null );
+		if ( is_array( $saved ) ) {
+			$existing = array();
+			foreach ( $saved as $rule ) {
+				if ( is_array( $rule ) && isset( $rule['value'] ) ) {
+					$existing[] = (string) $rule['value'];
+				}
+			}
+			foreach ( self::presets() as $preset ) {
+				if ( in_array( (string) $preset['value'], $new, true ) && ! in_array( (string) $preset['value'], $existing, true ) ) {
+					$saved[] = $preset;
+					$added++;
+				}
+			}
+			if ( $added ) {
+				update_option( self::OPTION_RULES, $saved );
+			}
+		}
+
+		update_option( self::OPTION_PRESETS_SEEN, $values );
+		return $added;
 	}
 
 	/**
