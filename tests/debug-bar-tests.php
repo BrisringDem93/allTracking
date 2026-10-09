@@ -9,8 +9,11 @@
  * gli utenti loggati, righe dei cookie di consenso personalizzati, lettura della
  * configurazione dalle opzioni e segnalazioni diagnostiche.
  *
+ * Copre anche chi vede il widget (ATI_Debug_Bar::compute_visibility) in base a
+ * modalità, login, permessi e costante ATI_DEBUG_BAR, modalità pubblica inclusa.
+ *
  * Il rendering (assets/js/debug-bar.js) e la fotografia che dipende da WordPress
- * (ATI_Debug_Bar) non sono coperti qui: richiedono DOM e WP reale.
+ * non sono coperti qui: richiedono DOM e WP reale.
  *
  * @package QuickTrackingIntegration\Tests
  */
@@ -29,6 +32,20 @@ if ( ! function_exists( 'ati_has_analytics_consent' ) ) {
 require dirname( __DIR__ ) . '/includes/cookie-guard/class-ati-cookie-rules.php';
 require dirname( __DIR__ ) . '/includes/cookie-guard/class-ati-cookie-consent.php';
 require dirname( __DIR__ ) . '/includes/debug-bar/class-ati-debug-expectations.php';
+
+// Stub per la visibilità del widget (ATI_Debug_Bar): permessi pilotabili via $GLOBALS.
+$GLOBALS['__ati_can_manage'] = false;
+if ( ! function_exists( 'current_user_can' ) ) {
+	function current_user_can( $cap ) {
+		return ! empty( $GLOBALS['__ati_can_manage'] );
+	}
+}
+if ( ! function_exists( 'wp_doing_cron' ) ) {
+	function wp_doing_cron() {
+		return false;
+	}
+}
+require dirname( __DIR__ ) . '/includes/debug-bar/class-ati-debug-bar.php';
 
 $GLOBALS['__pass'] = 0;
 $GLOBALS['__fail'] = 0;
@@ -317,6 +334,50 @@ $notices = ATI_Debug_Expectations::notices(
 ok( 'info' === level_of( $notices, 'GTM è attivo' ), 'GTM + tag client-side spuntati -> informativa sulla duplicazione' );
 
 $GLOBALS['__ati_logged_in'] = false;
+
+section( 'Visibilità del widget (modalità, login, permessi)' );
+
+/**
+ * Visibilità calcolata senza la cache statica di is_visible().
+ *
+ * @param string $mode      Modalità salvata.
+ * @param bool   $logged_in Utente loggato.
+ * @param bool   $admin     Ha il permesso richiesto.
+ * @return bool
+ */
+function dbg_visible( $mode, $logged_in, $admin ) {
+	update_option( ATI_Debug_Bar::OPTION_MODE, $mode );
+	$GLOBALS['__ati_logged_in']  = $logged_in;
+	$GLOBALS['__ati_can_manage'] = $admin;
+	$m = new ReflectionMethod( 'ATI_Debug_Bar', 'compute_visibility' );
+	return (bool) $m->invoke( null );
+}
+
+ok( false === dbg_visible( 'auto', true, true ), 'auto senza WP_DEBUG -> nascosto anche all\'amministratore' );
+ok( true === dbg_visible( 'always', true, true ), 'always -> visibile all\'amministratore' );
+ok( false === dbg_visible( 'always', false, false ), 'always -> nascosto al visitatore anonimo' );
+ok( false === dbg_visible( 'always', true, false ), 'always -> nascosto all\'utente loggato senza permessi' );
+ok( true === dbg_visible( 'public', false, false ), 'public -> visibile al visitatore anonimo' );
+ok( true === dbg_visible( 'public', true, false ), 'public -> visibile all\'utente loggato senza permessi' );
+ok( true === dbg_visible( 'public', true, true ), 'public -> visibile all\'amministratore' );
+ok( false === dbg_visible( 'off', true, true ), 'off -> nascosto a tutti' );
+ok( 'auto' === ( update_option( ATI_Debug_Bar::OPTION_MODE, 'bogus' ) ? ATI_Debug_Bar::mode() : '' ), 'modalità sconosciuta -> auto' );
+ok( isset( ATI_Debug_Bar::mode_labels()['public'] ), 'la modalità pubblica è selezionabile nelle impostazioni' );
+
+$restricted = new ReflectionMethod( 'ATI_Debug_Bar', 'restricted_viewer' );
+dbg_visible( 'public', false, false );
+ok( true === $restricted->invoke( null ), 'public + anonimo -> dati oscurati (host n8n)' );
+dbg_visible( 'public', true, true );
+ok( false === $restricted->invoke( null ), 'public + amministratore -> dati completi' );
+
+// Ultimo: la costante non si può ridefinire.
+define( 'ATI_DEBUG_BAR', false );
+ok( false === dbg_visible( 'public', false, false ), 'ATI_DEBUG_BAR=false spegne anche la modalità pubblica' );
+ok( false === ATI_Debug_Bar::is_public(), 'ATI_DEBUG_BAR=false -> is_public() falso' );
+
+update_option( ATI_Debug_Bar::OPTION_MODE, 'auto' );
+$GLOBALS['__ati_logged_in']  = false;
+$GLOBALS['__ati_can_manage'] = false;
 
 // -------------------------------------------------------------------------
 echo "\n---------------------------------------\n";

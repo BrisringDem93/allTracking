@@ -2,9 +2,9 @@
  * Widget di debug del tracking (front-end, solo amministratori con WP_DEBUG).
  *
  * Sola lettura: non scrive cookie, non invia eventi, non modifica il tracking.
- * L'unica cosa che persiste è lo stato aperto/chiuso del pannello e il tab
- * selezionato, in `localStorage` (non è un cookie e non riguarda l'utente finale,
- * che non vede mai questo widget).
+ * L'unica cosa che persiste è lo stato aperto/chiuso del pannello, il tab
+ * selezionato e la posizione a cui è stato trascinato, in `localStorage` (non è
+ * un cookie; fuori dalla modalità pubblica l'utente finale non vede mai il widget).
  *
  * La valutazione dei cookie NON è reimplementata qui: si usa
  * `window.atiCookieGuardApi`, esposto da `assets/js/cookie-guard.js` — lo stesso
@@ -25,6 +25,11 @@
   var API = window.atiCookieGuardApi || null;
   var STORE_OPEN = 'atiDebugBar.open';
   var STORE_TAB = 'atiDebugBar.tab';
+  var STORE_POS = 'atiDebugBar.pos';
+  // Margine minimo dai bordi della finestra quando il widget viene trascinato.
+  var EDGE = 8;
+  // Spostamento (px) oltre il quale una pressione sul pulsante è un trascinamento, non un clic.
+  var DRAG_THRESHOLD = 4;
   var CATEGORY_LABELS = DATA.labels || {};
 
   // =========================================================================
@@ -391,7 +396,9 @@
     ]);
 
     html += '<h4>Server-side Meta / n8n</h4>' + kv([
-      ['Endpoint n8n', t.n8n.configured ? '<span class="ok">configurato</span> ' + code(t.n8n.host) : '<span class="muted">non configurato</span>'],
+      ['Endpoint n8n', t.n8n.configured
+        ? '<span class="ok">configurato</span> ' + (t.n8n.host_hidden ? '<span class="muted">host nascosto (modalità pubblica)</span>' : code(t.n8n.host))
+        : '<span class="muted">non configurato</span>'],
       ['Header auth', flag(t.n8n.auth, 'impostato', 'assente')],
       ['Dataset Meta', t.meta_capi.dataset ? code(t.meta_capi.dataset) : '<span class="muted">usa il Pixel ID</span>'],
       ['Token CAPI', flag(t.meta_capi.has_token, 'impostato', 'assente')]
@@ -498,6 +505,107 @@
     root.className = isOpen ? 'ati-dbg-open' : '';
     store(STORE_OPEN, isOpen ? '1' : '0');
     if (isOpen) renderBody();
+    // Pulsante e pannello hanno dimensioni diverse: il widget aperto non deve uscire dallo schermo.
+    keepInView();
+  }
+
+  // =========================================================================
+  // TRASCINAMENTO
+  // =========================================================================
+
+  /**
+   * Posizione (x, y) del bordo superiore sinistro riportata dentro la finestra.
+   * Funzione pura: usata dal trascinamento ed esposta per i test.
+   */
+  function clampPosition(x, y, width, height, viewWidth, viewHeight) {
+    var maxX = Math.max(EDGE, viewWidth - width - EDGE);
+    var maxY = Math.max(EDGE, viewHeight - height - EDGE);
+    return {
+      x: Math.round(Math.min(Math.max(x, EDGE), maxX)),
+      y: Math.round(Math.min(Math.max(y, EDGE), maxY))
+    };
+  }
+
+  function readPosition() {
+    try {
+      var pos = JSON.parse(store(STORE_POS) || 'null');
+      if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') return pos;
+    } catch (e) { /* valore corrotto: posizione predefinita */ }
+    return null;
+  }
+
+  /** Posizione esplicita in px (sostituisce l'ancoraggio in basso a destra del CSS). */
+  function placeAt(x, y) {
+    var rect = root.getBoundingClientRect();
+    var pos = clampPosition(x, y, rect.width, rect.height, window.innerWidth, window.innerHeight);
+    root.style.left = pos.x + 'px';
+    root.style.top = pos.y + 'px';
+    root.style.right = 'auto';
+    root.style.bottom = 'auto';
+    return pos;
+  }
+
+  /** Torna all'angolo in basso a destra definito nel CSS. */
+  function resetPosition() {
+    root.style.left = root.style.top = root.style.right = root.style.bottom = '';
+    store(STORE_POS, '');
+  }
+
+  /** Riporta dentro la finestra un widget spostato (ridimensionamento, apertura). */
+  function keepInView() {
+    if (!root || !root.style.left) return;
+    placeAt(parseFloat(root.style.left) || 0, parseFloat(root.style.top) || 0);
+  }
+
+  /**
+   * Rende `handle` una maniglia di trascinamento del widget. Con il mouse, il dito
+   * o la penna (Pointer Events). Un trascinamento sul pulsante chiuso non lo apre.
+   */
+  function makeDraggable(handle) {
+    var start = null;
+    var moved = false;
+
+    handle.addEventListener('pointerdown', function (event) {
+      if (event.button !== undefined && event.button !== 0) return;
+      // I pulsanti dell'intestazione restano cliccabili: non sono maniglie.
+      if (handle.id === 'ati-dbg-head' && event.target.closest && event.target.closest('button')) return;
+      var rect = root.getBoundingClientRect();
+      start = { px: event.clientX, py: event.clientY, x: rect.left, y: rect.top };
+      moved = false;
+      try { handle.setPointerCapture(event.pointerId); } catch (e) { /* non supportato */ }
+    });
+
+    handle.addEventListener('pointermove', function (event) {
+      if (!start) return;
+      var dx = event.clientX - start.px;
+      var dy = event.clientY - start.py;
+      if (!moved && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+      moved = true;
+      root.classList.add('ati-dbg-dragging');
+      placeAt(start.x + dx, start.y + dy);
+      event.preventDefault();
+    });
+
+    function end() {
+      if (!start) return;
+      start = null;
+      root.classList.remove('ati-dbg-dragging');
+      if (moved) {
+        var rect = root.getBoundingClientRect();
+        store(STORE_POS, JSON.stringify({ x: Math.round(rect.left), y: Math.round(rect.top) }));
+      }
+    }
+    handle.addEventListener('pointerup', end);
+    handle.addEventListener('pointercancel', end);
+
+    // Il clic che chiude un trascinamento non deve aprire/attivare nulla.
+    handle.addEventListener('click', function (event) {
+      if (moved) {
+        moved = false;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+      }
+    }, true);
   }
 
   function build() {
@@ -505,11 +613,11 @@
     root.id = 'ati-dbg';
 
     root.innerHTML =
-      '<button id="ati-dbg-toggle" type="button" title="Diagnostica tracking e cookie">' +
+      '<button id="ati-dbg-toggle" type="button" title="Diagnostica tracking e cookie · trascina per spostare">' +
         '🍪 Tracking debug <span class="ati-dbg-pill">·</span>' +
       '</button>' +
       '<div id="ati-dbg-panel">' +
-        '<div id="ati-dbg-head">' +
+        '<div id="ati-dbg-head" title="Trascina per spostare · doppio clic per riportarlo nell\'angolo">' +
           '<strong>Tracking debug</strong> <span class="ati-dbg-ver">v' + esc(DATA.version) + '</span>' +
           '<span class="ati-dbg-actions">' +
             '<button type="button" data-ati-dbg="refresh">Aggiorna</button>' +
@@ -518,6 +626,9 @@
             '<button type="button" data-ati-dbg="close" title="Chiudi">✕</button>' +
           '</span>' +
         '</div>' +
+        (DATA['public']
+          ? '<div id="ati-dbg-public">⚠ Modalità pubblica: questo pannello è visibile a TUTTI i visitatori. Solo staging/test, non usarla in produzione.</div>'
+          : '') +
         '<div id="ati-dbg-tabs">' +
           TABS.map(function (t) {
             return '<button type="button" role="tab" data-tab="' + t.id + '" aria-selected="false">' + esc(t.label) + '</button>';
@@ -544,10 +655,21 @@
       });
     });
 
+    makeDraggable(root.querySelector('#ati-dbg-toggle'));
+    makeDraggable(root.querySelector('#ati-dbg-head'));
+    root.querySelector('#ati-dbg-head').addEventListener('dblclick', function (event) {
+      if (event.target.closest && event.target.closest('button')) return;
+      resetPosition();
+    });
+
     renderBadge();
+    var saved = readPosition();
+    if (saved) placeAt(saved.x, saved.y);
     if (store(STORE_OPEN) === '1') {
       open(true);
     }
+
+    window.addEventListener('resize', keepInView, false);
 
     // Il consenso può cambiare senza ricaricare: il pannello si riallinea.
     var events = ['cmplz_status_change', 'CookiebotOnAccept', 'CookiebotOnDecline',
@@ -581,7 +703,8 @@
     matching: matching,
     compare: compare,
     serverOnly: serverOnly,
-    problems: problems
+    problems: problems,
+    clampPosition: clampPosition
   };
 
   if (document.readyState === 'loading') {

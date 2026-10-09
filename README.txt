@@ -2,7 +2,7 @@
 
 Un plugin WordPress che consente di installare rapidamente Facebook Pixel, Google Analytics 4 e Google Tag Manager senza toccare il codice.
 
-Versione: 0.13.1
+Versione: 0.14.0
 
 ## GA4 "server-side first" (conversioni confermate)
 
@@ -233,8 +233,13 @@ Test: `php tests/cookie-guard-tests.php` (motore di regole PHP) e
 Dalla 0.13.0, con `WP_DEBUG` attivo, chi è **loggato come amministratore** vede sul sito un
 pannello richiudibile in basso a destra (`🍪 Tracking debug`) che risponde alla domanda
 «questo cookie ci dovrebbe essere o no?» senza aprire i DevTools. Il badge sul pulsante
-conta i problemi rilevati. I visitatori non lo vedono **mai**: non compare per gli utenti
-anonimi, né in admin, AJAX, REST, cron, feed o embed.
+conta i problemi rilevati. I visitatori non lo vedono, salvo la **modalità pubblica** (vedi
+sotto): non compare per gli utenti anonimi, né in admin, AJAX, REST, cron, feed o embed.
+
+Il widget si **trascina** dove è più comodo, sia chiuso (dal pulsante) sia aperto
+(dall'intestazione); la posizione viene ricordata tra una pagina e l'altra e resta sempre
+dentro la finestra, anche ridimensionandola. Doppio clic sull'intestazione per riportarlo
+nell'angolo in basso a destra.
 
 | Scheda | Cosa mostra |
 | --- | --- |
@@ -264,8 +269,19 @@ bloccando nulla* e gli esiti sono una simulazione: il pannello lo dichiara e inv
 verificare in navigazione anonima.
 
 Controllo: **Impostazioni → Tracking Integration → Generale → «Widget di debug
-(front-end)»** con `Automatico` (default, solo con `WP_DEBUG`), `Sempre` o `Mai`. In
-`wp-config.php` la costante `ATI_DEBUG_BAR` ha la precedenza su tutto:
+(front-end)»** con `Automatico` (default, solo con `WP_DEBUG`), `Sempre` (anche senza
+`WP_DEBUG`, solo amministratori), `Sempre, per TUTTI i visitatori` o `Mai`.
+
+**Modalità pubblica — solo staging/test, mai in produzione.** Il widget compare anche ai
+visitatori non loggati, utile per verificare consenso e cookie esattamente come li vede un
+utente anonimo. Mostra a chiunque la configurazione del tracking (tag attivi, ID, consenso,
+cookie); ai non amministratori viene nascosto anche l'host di n8n, e i segreti non sono mai
+inviati. Finché è attiva le pagine non vengono messe in cache (`DONOTCACHEPAGE` +
+`nocache_headers()`), il pannello mostra una fascia rossa di avviso e in bacheca compare un
+avviso permanente. Dopo averla accesa o spenta svuota la cache del sito.
+
+In `wp-config.php` la costante `ATI_DEBUG_BAR` ha la precedenza su tutto (`false` spegne
+anche la modalità pubblica):
 
 ```php
 define( 'ATI_DEBUG_BAR', true );  // forza il widget anche senza WP_DEBUG

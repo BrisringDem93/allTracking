@@ -205,6 +205,20 @@ env = makeEnv({
 });
 ok(env.api.problems(env.api.cookies()) === 0, 'cookie atteso e assente -> avviso, non conteggiato tra i problemi');
 
+// Trascinamento: la posizione salvata viene sempre riportata dentro la finestra.
+env = makeEnv({ cookies: [] });
+var clamp = env.api.clampPosition;
+var p = clamp(100, 200, 300, 150, 1280, 800);
+ok(p.x === 100 && p.y === 200, 'posizione dentro la finestra -> invariata');
+p = clamp(-50, -20, 300, 150, 1280, 800);
+ok(p.x === 8 && p.y === 8, 'oltre il bordo alto/sinistro -> riportata al margine di 8px');
+p = clamp(1200, 790, 300, 150, 1280, 800);
+ok(p.x === 1280 - 300 - 8 && p.y === 800 - 150 - 8, 'oltre il bordo basso/destro -> il widget resta intero nella finestra');
+p = clamp(500, 500, 560, 640, 375, 600);
+ok(p.x === 8 && p.y === 8, 'widget più grande della finestra (mobile) -> ancorato in alto a sinistra');
+p = clamp(10.6, 20.4, 100, 40, 1280, 800);
+ok(p.x === 11 && p.y === 20, 'coordinate arrotondate al pixel');
+
 // -------------------------------------------------------------------------
 console.log('\n---------------------------------------');
 console.log('RISULTATO: ' + pass + ' PASS / ' + fail + ' FAIL');
