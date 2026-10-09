@@ -236,6 +236,11 @@ pannello richiudibile in basso a destra (`🍪 Tracking debug`) che risponde all
 conta i problemi rilevati. I visitatori non lo vedono, salvo la **modalità pubblica** (vedi
 sotto): non compare per gli utenti anonimi, né in admin, AJAX, REST, cron, feed o embed.
 
+Il pannello si **aggiorna da solo** quando il consenso cambia dopo il caricamento (es.
+banner iubenda accettato): la colonna «Browser» e i CMP rilevati nel browser si allineano
+entro un secondo, senza ricaricare. La colonna «Server» resta quella del caricamento, come
+indica un avviso.
+
 Il widget si **trascina** dove è più comodo, sia chiuso (dal pulsante) sia aperto
 (dall'intestazione); la posizione viene ricordata tra una pagina e l'altra e resta sempre
 dentro la finestra, anche ridimensionandola. Doppio clic sull'intestazione per riportarlo

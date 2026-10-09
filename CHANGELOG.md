@@ -21,7 +21,21 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
   pulsanti dell'intestazione restano cliccabili.
 - Test: visibilità per modalità/login/permessi/costante e oscuramento dei dati in modalità
   pubblica (`tests/debug-bar-tests.php`, +14), limiti di posizione del trascinamento
-  (`tests/debug-bar-tests.js`, +5).
+  (`tests/debug-bar-tests.js`, +5), consenso cambiato dopo il caricamento e motore dei
+  cookie caricato dopo il widget (`tests/debug-bar-tests.js`, +5).
+
+### Corretto
+- **Il widget non vedeva il consenso dato dopo il caricamento della pagina** (es. banner
+  iubenda accettato): ascoltava solo eventi che iubenda non emette, quindi serviva
+  ricaricare. Ora osserva `document.cookie` (ogni secondo) e si aggiorna appena il CMP
+  scrive il suo cookie, con qualunque CMP; la posizione di scorrimento del pannello resta
+  invariata. Se il consenso nel browser differisce da quello visto dal server al
+  caricamento, un avviso spiega che la colonna «Server» e le segnalazioni lato server si
+  riferiscono al caricamento.
+- **Colonna «Browser (ora)» ferma su «n/d»**: l'API del motore dei cookie veniva letta una
+  sola volta all'avvio del widget. Se il motore partiva dopo (ottimizzazioni JS dei plugin
+  di cache che combinano o differiscono gli script) il widget non la trovava più. Ora viene
+  risolta al momento dell'uso.
 
 ### Modificato
 - La modalità `Sempre` è descritta come «anche senza WP_DEBUG, solo per gli

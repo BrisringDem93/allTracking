@@ -22,7 +22,14 @@
     return;
   }
 
-  var API = window.atiCookieGuardApi || null;
+  // API del motore dei cookie, risolta al primo uso e non solo all'avvio: con le
+  // ottimizzazioni JS dei plugin di cache (combina/differisci) lo script del guard
+  // può essere eseguito dopo questo, e il widget resterebbe su «n/d» per sempre.
+  var API = null;
+  function guardApi() {
+    if (!API) API = window.atiCookieGuardApi || null;
+    return API;
+  }
   var STORE_OPEN = 'atiDebugBar.open';
   var STORE_TAB = 'atiDebugBar.tab';
   var STORE_POS = 'atiDebugBar.pos';
@@ -30,6 +37,8 @@
   var EDGE = 8;
   // Spostamento (px) oltre il quale una pressione sul pulsante è un trascinamento, non un clic.
   var DRAG_THRESHOLD = 4;
+  // Intervallo (ms) con cui si controlla se i cookie sono cambiati.
+  var COOKIE_POLL_MS = 1000;
   var CATEGORY_LABELS = DATA.labels || {};
 
   // =========================================================================
@@ -101,7 +110,7 @@
 
   /** Nomi dei cookie leggibili da JavaScript in questa pagina. */
   function presentCookies() {
-    if (API && typeof API.cookies === 'function') {
+    if (guardApi() && typeof API.cookies === 'function') {
       return API.cookies();
     }
     var out = [];
@@ -116,14 +125,14 @@
 
   /** Consenso live: dal motore del guard se c'è, altrimenti quello del server. */
   function liveConsent() {
-    if (API && typeof API.consent === 'function') {
+    if (guardApi() && typeof API.consent === 'function') {
       return API.consent();
     }
     return null;
   }
 
   function evaluate(name) {
-    if (API && typeof API.evaluate === 'function') {
+    if (guardApi() && typeof API.evaluate === 'function') {
       return API.evaluate(name, '');
     }
     return null;
@@ -230,7 +239,7 @@
     var custom = (DATA.guard && DATA.guard.custom_cookies) || {};
     var customRows = Object.keys(custom).filter(function (k) { return custom[k]; }).map(function (k) {
       var value = '<span class="muted">n/d</span>';
-      if (API && typeof API.readCookie === 'function') {
+      if (guardApi() && typeof API.readCookie === 'function') {
         var raw = API.readCookie(custom[k]);
         value = null === raw ? '<span class="muted">assente</span>' : code(shorten(raw));
       }
@@ -242,7 +251,7 @@
       ['Rilevati (server)', (DATA.guard.providers && DATA.guard.providers.length)
         ? code(DATA.guard.providers.join(', '))
         : '<span class="bad">nessuno</span>'],
-      ['Rilevati (browser)', (API && typeof API.providers === 'function')
+      ['Rilevati (browser)', (guardApi() && typeof API.providers === 'function')
         ? (API.providers().length ? code(API.providers().join(', ')) : '<span class="bad">nessuno</span>')
         : '<span class="muted">n/d</span>'],
       ['Consenso analytics', code((DATA.ga4 && DATA.ga4.consent_mode) || 'auto')]
@@ -272,7 +281,7 @@
       table(['Nome', 'Esito con le regole attive', 'Categoria', 'Regola'], rows,
         'Nessun cookie leggibile da JavaScript su questo dominio.');
 
-    if (!API) {
+    if (!guardApi()) {
       html += '<p class="ati-dbg-note warn">Motore del guard non disponibile: gli esiti non possono essere calcolati nel browser.</p>';
     }
 
@@ -314,7 +323,7 @@
 
   function tabGuard() {
     var g = DATA.guard || {};
-    var stats = (API && typeof API.stats === 'function') ? API.stats() : null;
+    var stats = (guardApi() && typeof API.stats === 'function') ? API.stats() : null;
 
     var html = '<h4>Blocco cookie</h4>' + kv([
       ['Modalità', code(g.mode) + ' <span class="muted">' + esc(g.mode_label || '') + '</span>'],
@@ -430,10 +439,29 @@
   var root;
   var current = store(STORE_TAB) || 'consent';
 
+  /**
+   * Il consenso nel browser è cambiato rispetto a quello visto dal server al
+   * caricamento (banner accettato o rifiutato dopo)? Funzione pura sui due stati.
+   */
+  function consentChanged(server, live) {
+    if (!server || !live) return false;
+    return ['marketing', 'analytics', 'preferences'].some(function (key) {
+      return !!server[key] !== !!live[key];
+    });
+  }
+
   function noticesHtml() {
     var list = DATA.notices || [];
-    if (!list.length) return '';
-    return list.map(function (n) {
+    var html = '';
+    var api = guardApi();
+    var cmpAppeared = api && typeof api.providers === 'function' && api.providers().length &&
+      !(DATA.guard && DATA.guard.providers && DATA.guard.providers.length);
+    if (consentChanged(DATA.consent, liveConsent()) || cmpAppeared) {
+      html += '<p class="ati-dbg-msg info">Il consenso è cambiato dopo il caricamento della pagina: ' +
+        'la colonna «Browser» è aggiornata, mentre la colonna «Server» e le segnalazioni qui sotto ' +
+        'si riferiscono al caricamento. Ricarica la pagina per allinearle.</p>';
+    }
+    return html + list.map(function (n) {
       return '<p class="ati-dbg-msg ' + esc(n.level) + '">' + esc(n.text) + '</p>';
     }).join('');
   }
@@ -447,7 +475,10 @@
     } catch (e) {
       html = '<p class="bad">Errore nel widget di debug: ' + esc(e && e.message) + '</p>';
     }
+    // L'aggiornamento automatico non deve far perdere il punto in cui si stava leggendo.
+    var scroll = body.scrollTop;
     body.innerHTML = (current === 'consent' ? noticesHtml() : '') + html;
+    body.scrollTop = scroll;
 
     Array.prototype.forEach.call(root.querySelectorAll('#ati-dbg-tabs button'), function (button) {
       button.setAttribute('aria-selected', button.getAttribute('data-tab') === current ? 'true' : 'false');
@@ -479,7 +510,7 @@
         dataLayer: window.dataLayer ? window.dataLayer.length : null,
         gtag: typeof window.gtag === 'function',
         fbq: typeof window.fbq === 'function',
-        guardStats: (API && typeof API.stats === 'function') ? API.stats() : null
+        guardStats: (guardApi() && typeof API.stats === 'function') ? API.stats() : null
       }
     };
     var text = JSON.stringify(dump, null, 2);
@@ -680,6 +711,32 @@
         document.addEventListener(name, refresh, false);
       } catch (e) { /* evento non registrabile */ }
     });
+
+    // Non tutti i CMP emettono eventi nella pagina (iubenda, ad esempio, scrive solo
+    // il cookie _iub_cs-… all'accettazione): si osserva document.cookie e si
+    // aggiorna il pannello appena cambia, qualunque sia il CMP.
+    watchCookies();
+  }
+
+  /** Aggiorna il pannello quando cambia document.cookie (consenso dato dopo il caricamento). */
+  function watchCookies() {
+    if (typeof window.setInterval !== 'function') return;
+    var last = cookieString();
+    window.setInterval(function () {
+      var now = cookieString();
+      if (now !== last) {
+        last = now;
+        refresh();
+      }
+    }, COOKIE_POLL_MS);
+  }
+
+  function cookieString() {
+    try {
+      return String(document.cookie || '');
+    } catch (e) {
+      return '';
+    }
   }
 
   function init() {
@@ -704,7 +761,8 @@
     compare: compare,
     serverOnly: serverOnly,
     problems: problems,
-    clampPosition: clampPosition
+    clampPosition: clampPosition,
+    consentChanged: consentChanged
   };
 
   if (document.readyState === 'loading') {

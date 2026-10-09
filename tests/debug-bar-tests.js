@@ -219,6 +219,24 @@ ok(p.x === 8 && p.y === 8, 'widget più grande della finestra (mobile) -> ancora
 p = clamp(10.6, 20.4, 100, 40, 1280, 800);
 ok(p.x === 11 && p.y === 20, 'coordinate arrotondate al pixel');
 
+// Consenso cambiato dopo il caricamento (banner accettato senza ricaricare).
+env = makeEnv({ cookies: [] });
+var none = { marketing: false, analytics: false, preferences: false };
+ok(env.api.consentChanged(none, { marketing: false, analytics: false, preferences: false }) === false, 'stesso consenso server/browser -> nessun cambio');
+ok(env.api.consentChanged(none, { marketing: true, analytics: true, preferences: true }) === true, 'banner accettato dopo il caricamento -> cambio rilevato');
+ok(env.api.consentChanged(none, null) === false, 'consenso browser non disponibile -> nessun cambio dichiarato');
+
+// Motore dei cookie caricato DOPO il widget (ottimizzazioni JS dei plugin di cache).
+env = makeEnv({ cookies: ['_ga'], noGuard: true });
+ok(env.api.consent() === null, 'motore non ancora caricato -> consenso browser n/d');
+env.window.atiCookieGuardApi = {
+  cookies() { return ['_ga']; },
+  consent() { return { necessary: true, marketing: true, analytics: true, preferences: false }; },
+  evaluate() { return { blocked: false, action: '', reason: 'no_match', rule: null, label: '', category: '' }; },
+  providers() { return ['iubenda']; }
+};
+ok(env.api.consent() && env.api.consent().marketing === true, 'motore caricato dopo il widget -> il widget lo usa senza ricaricare');
+
 // -------------------------------------------------------------------------
 console.log('\n---------------------------------------');
 console.log('RISULTATO: ' + pass + ' PASS / ' + fail + ' FAIL');
