@@ -238,11 +238,16 @@ function ati_render_general_tab() {
                     </select>
                     <p class="description">
                         Pannello a schermo sul sito con consenso rilevato, cookie presenti, cookie che dovrebbero o non dovrebbero esserci,
-                        stato del blocco cookie, dei tag e della coda GA4. È di <strong>sola lettura</strong> e viene stampato solo per gli
-                        utenti loggati con permessi di amministrazione: i visitatori non lo vedono mai.
+                        stato del blocco cookie, dei tag e della coda GA4. È di <strong>sola lettura</strong> e, salvo la modalità pubblica,
+                        viene stampato solo per gli utenti loggati con permessi di amministrazione. Il pannello si può trascinare dove
+                        è più comodo (doppio clic sull'intestazione per riportarlo nell'angolo).
                         <?php if ( ! ( defined( 'WP_DEBUG' ) && WP_DEBUG ) ) : ?>
                             <br /><strong>WP_DEBUG è disattivato:</strong> con «Automatico» il widget non compare.
                         <?php endif; ?>
+                        <br /><span style="color:#b32d2e;"><strong>⚠ «Sempre, per TUTTI i visitatori»: non usarla in produzione.</strong>
+                        Il widget compare anche ai visitatori non loggati e mostra a chiunque la configurazione del tracking
+                        (tag attivi, ID GA4/Pixel/GTM, stato del consenso e dei cookie; mai segreti né l'host di n8n).
+                        Finché è attiva le pagine non vengono messe in cache: dopo averla accesa o spenta svuota la cache del sito.</span>
                         <?php if ( defined( 'ATI_DEBUG_BAR' ) ) : ?>
                             <br /><strong>La costante <code>ATI_DEBUG_BAR</code> è definita
                             (<?php echo esc_html( ATI_DEBUG_BAR ? 'true' : 'false' ); ?>)</strong> e ha la precedenza su questa impostazione.

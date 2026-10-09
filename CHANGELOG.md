@@ -2,6 +2,33 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.14.0] - 2026-10-09 — Widget di debug: modalità pubblica e trascinamento
+
+### Aggiunto
+- **Modalità «Sempre, per TUTTI i visitatori»** per il widget di debug (tab *Generale*):
+  il pannello compare anche ai visitatori non loggati, per verificare consenso e cookie come
+  li vede un utente anonimo. **Solo staging/test, mai in produzione**: avviso in rosso nella
+  pagina impostazioni, fascia di avviso nel pannello e avviso permanente in bacheca finché è
+  attiva. Ai non amministratori viene nascosto anche l'host del webhook n8n. La costante
+  `ATI_DEBUG_BAR=false` la spegne come le altre modalità.
+- In modalità pubblica le pagine non vengono messe in cache (`DONOTCACHEPAGE` +
+  `nocache_headers()`): altrimenti i visitatori riceverebbero la fotografia lato server di
+  un'altra richiesta e il widget resterebbe in cache anche dopo averlo spento.
+- **Widget trascinabile** con mouse, dito o penna (Pointer Events): dal pulsante quando è
+  chiuso, dall'intestazione quando è aperto. La posizione è salvata in `localStorage`,
+  viene riportata dentro la finestra a ogni apertura e ridimensionamento, e un doppio clic
+  sull'intestazione la riporta nell'angolo. Un trascinamento non apre il pannello e i
+  pulsanti dell'intestazione restano cliccabili.
+- Test: visibilità per modalità/login/permessi/costante e oscuramento dei dati in modalità
+  pubblica (`tests/debug-bar-tests.php`, +14), limiti di posizione del trascinamento
+  (`tests/debug-bar-tests.js`, +5).
+
+### Modificato
+- La modalità `Sempre` è descritta come «anche senza WP_DEBUG, solo per gli
+  amministratori» (il comportamento non cambia).
+- Su schermi stretti il pannello è limitato a `100vw - 24px` invece di `max-width:none`,
+  così resta intero anche dopo essere stato spostato.
+
 ## [0.13.1] - 2026-10-09 — Fix triplo Lead Meta/n8n con formManageWP
 
 ### Corretto

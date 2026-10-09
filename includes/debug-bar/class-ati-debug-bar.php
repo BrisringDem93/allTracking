@@ -4,14 +4,17 @@
  *
  * Pannello a schermo, visibile SOLO a un utente loggato con i permessi di
  * amministrazione e SOLO con `WP_DEBUG` attivo (o forzato da opzione/costante).
+ * Eccezione: la modalità `public` (solo staging/test) lo mostra a TUTTI i
+ * visitatori, anonimi inclusi, con un avviso nel pannello e in bacheca.
  * Mostra in un colpo d'occhio: consenso rilevato (server e browser), cookie
  * presenti con l'esito che hanno con le regole attive, cookie che dovrebbero
  * esserci o non esserci, stato del blocco cookie, dei tag e della pipeline GA4
  * server-side.
  *
  * È un pannello di SOLA LETTURA: non scrive cookie, non invia eventi, non
- * modifica il comportamento del tracking. Non viene mai stampato per i visitatori,
- * quindi non può alterare quello che vede un utente anonimo.
+ * modifica il comportamento del tracking. Fuori dalla modalità `public` non viene
+ * mai stampato per i visitatori, quindi non può alterare quello che vede un utente
+ * anonimo.
  *
  * Il motore di valutazione non è duplicato: il widget usa `atiCookieGuardApi`,
  * esposto dallo stesso `assets/js/cookie-guard.js` che gira sul front-end (con
@@ -31,7 +34,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 class ATI_Debug_Bar {
 
 	/**
-	 * Opzione di visibilità: auto (solo con WP_DEBUG) | always | off.
+	 * Opzione di visibilità: auto (solo con WP_DEBUG) | always | public | off.
 	 */
 	const OPTION_MODE = 'ati_debug_bar_mode';
 
@@ -53,16 +56,83 @@ class ATI_Debug_Bar {
 
 		// Ultimo output della pagina: il widget non deve interferire con nulla.
 		add_action( 'wp_footer', array( __CLASS__, 'render' ), 9999 );
+
+		// Modalità pubblica: promemoria in bacheca, per non dimenticarla accesa.
+		add_action( 'admin_notices', array( __CLASS__, 'public_mode_notice' ) );
+
+		// Modalità pubblica: le pagine non vanno messe in cache, altrimenti tutti i
+		// visitatori riceverebbero la fotografia lato server di un'altra richiesta e
+		// il widget resterebbe in cache anche dopo averlo spento.
+		add_action( 'template_redirect', array( __CLASS__, 'disable_page_cache' ), 0 );
+	}
+
+	/**
+	 * Chiede ai plugin di cache di non salvare la pagina (modalità pubblica).
+	 *
+	 * `DONOTCACHEPAGE` è rispettata da SG Optimizer, WP Rocket, W3 Total Cache,
+	 * LiteSpeed Cache e WP Super Cache.
+	 *
+	 * @return void
+	 */
+	public static function disable_page_cache() {
+		if ( ! self::is_visible() || ! self::is_public() ) {
+			return;
+		}
+		if ( ! defined( 'DONOTCACHEPAGE' ) ) {
+			define( 'DONOTCACHEPAGE', true );
+		}
+		nocache_headers();
+	}
+
+	/**
+	 * Avviso in bacheca quando la modalità pubblica è attiva.
+	 *
+	 * @return void
+	 */
+	public static function public_mode_notice() {
+		if ( ! self::is_public() || ! current_user_can( self::capability() ) ) {
+			return;
+		}
+		$url = admin_url( 'options-general.php?page=ati-settings&tab=general' );
+		echo '<div class="notice notice-error"><p><strong>Quick Tracking Integration:</strong> '
+			. 'il widget di debug è in <strong>modalità pubblica</strong> ed è visibile a <strong>tutti i visitatori</strong> del sito. '
+			. 'Usala solo su staging o in test, mai in produzione. '
+			. '<a href="' . esc_url( $url ) . '">Cambia impostazione</a></p></div>';
+	}
+
+	/**
+	 * Il visitatore corrente vede il widget senza essere amministratore?
+	 *
+	 * In quel caso i dati di configurazione non indispensabili vengono oscurati.
+	 *
+	 * @return bool
+	 */
+	protected static function restricted_viewer() {
+		return self::is_public() && ! ( is_user_logged_in() && current_user_can( self::capability() ) );
 	}
 
 	/**
 	 * Modalità di visibilità configurata.
 	 *
-	 * @return string auto|always|off
+	 * @return string auto|always|public|off
 	 */
 	public static function mode() {
 		$mode = (string) get_option( self::OPTION_MODE, self::MODE_DEFAULT );
-		return in_array( $mode, array( 'auto', 'always', 'off' ), true ) ? $mode : self::MODE_DEFAULT;
+		return in_array( $mode, array( 'auto', 'always', 'public', 'off' ), true ) ? $mode : self::MODE_DEFAULT;
+	}
+
+	/**
+	 * Il widget è visibile anche ai visitatori non loggati?
+	 *
+	 * Solo con la modalità `public` e se la costante `ATI_DEBUG_BAR` non lo spegne.
+	 *
+	 * @return bool
+	 */
+	public static function is_public() {
+		if ( defined( 'ATI_DEBUG_BAR' ) && ! ATI_DEBUG_BAR ) {
+			return false;
+		}
+		return 'public' === self::mode();
 	}
 
 	/**
@@ -73,7 +143,8 @@ class ATI_Debug_Bar {
 	public static function mode_labels() {
 		return array(
 			'auto'   => 'Automatico — solo con WP_DEBUG attivo (consigliato)',
-			'always' => 'Sempre — anche in produzione, solo per gli amministratori',
+			'always' => 'Sempre — anche senza WP_DEBUG, solo per gli amministratori',
+			'public' => 'Sempre, per TUTTI i visitatori — solo staging/test, MAI in produzione',
 			'off'    => 'Mai — widget disattivato',
 		);
 	}
@@ -108,7 +179,7 @@ class ATI_Debug_Bar {
 		if ( 'off' === $mode ) {
 			return false;
 		}
-		if ( 'always' === $mode ) {
+		if ( 'always' === $mode || 'public' === $mode ) {
 			return true;
 		}
 		return defined( 'WP_DEBUG' ) && WP_DEBUG;
@@ -138,7 +209,8 @@ class ATI_Debug_Bar {
 		if ( ! self::debug_enabled() ) {
 			return false;
 		}
-		if ( ! is_user_logged_in() || ! current_user_can( self::capability() ) ) {
+		// Modalità pubblica: niente controllo su login e permessi.
+		if ( ! self::is_public() && ( ! is_user_logged_in() || ! current_user_can( self::capability() ) ) ) {
 			return false;
 		}
 		// Solo pagine HTML del front-end: mai in admin, AJAX, REST, cron, feed.
@@ -410,10 +482,12 @@ class ATI_Debug_Bar {
 			'form_fields'  => (bool) $cfg['form_fields'],
 			'tracking_off' => (bool) $cfg['tracking_off'],
 			'n8n'          => array(
-				// Il path del webhook è di fatto un segreto: si mostra solo l'host.
-				'configured' => '' !== $endpoint,
-				'host'       => $host,
-				'auth'       => '' !== trim( (string) get_option( 'ati_server_auth_key', '' ) ),
+				// Il path del webhook è di fatto un segreto: si mostra solo l'host,
+				// e ai visitatori non amministratori (modalità pubblica) nemmeno quello.
+				'configured'  => '' !== $endpoint,
+				'host'        => self::restricted_viewer() ? '' : $host,
+				'host_hidden' => self::restricted_viewer() && '' !== $host,
+				'auth'        => '' !== trim( (string) get_option( 'ati_server_auth_key', '' ) ),
 			),
 			'meta_capi'    => array(
 				'dataset'   => trim( (string) get_option( 'ati_meta_dataset_id', '' ) ),
@@ -440,6 +514,7 @@ class ATI_Debug_Bar {
 		return array(
 			'version'  => defined( 'ATI_PLUGIN_VERSION' ) ? ATI_PLUGIN_VERSION : '',
 			'mode'     => self::mode(),
+			'public'   => self::is_public(),
 			'forced'   => defined( 'ATI_DEBUG_BAR' ),
 			'env'      => array(
 				'wp_debug'         => defined( 'WP_DEBUG' ) && WP_DEBUG,
@@ -480,7 +555,9 @@ class ATI_Debug_Bar {
 			return;
 		}
 
-		echo "\n<!-- Quick Tracking Integration: widget di debug (visibile solo agli amministratori con WP_DEBUG) -->\n";
+		echo self::is_public()
+			? "\n<!-- Quick Tracking Integration: widget di debug in MODALITÀ PUBBLICA (visibile a tutti: solo staging/test) -->\n"
+			: "\n<!-- Quick Tracking Integration: widget di debug (visibile solo agli amministratori con WP_DEBUG) -->\n";
 		echo '<style id="ati-debug-bar-style">' . self::styles() . "</style>\n"; // phpcs:ignore WordPress.Security.EscapeOutput
 
 		// Guard non stampato in questa pagina (es. escluso per gli utenti loggati):
@@ -524,7 +601,11 @@ class ATI_Debug_Bar {
 #ati-dbg-panel{display:none;background:#0d1117;border:1px solid #30363d;border-radius:10px;box-shadow:0 12px 40px rgba(0,0,0,.5);overflow:hidden;max-height:min(70vh,640px);flex-direction:column}
 #ati-dbg.ati-dbg-open #ati-dbg-panel{display:flex}
 #ati-dbg.ati-dbg-open #ati-dbg-toggle{display:none}
-#ati-dbg-head{display:flex;align-items:center;gap:8px;padding:9px 12px;background:#161b22;border-bottom:1px solid #30363d}
+#ati-dbg-head{display:flex;align-items:center;gap:8px;padding:9px 12px;background:#161b22;border-bottom:1px solid #30363d;cursor:move;touch-action:none;user-select:none}
+#ati-dbg-head button{cursor:pointer}
+#ati-dbg-toggle{touch-action:none;user-select:none}
+#ati-dbg.ati-dbg-dragging,#ati-dbg.ati-dbg-dragging *{cursor:grabbing!important;user-select:none}
+#ati-dbg-public{padding:6px 12px;background:#5a1d1d;color:#ffdcd7;border-bottom:1px solid #f85149;font-weight:600}
 #ati-dbg-head strong{font-size:12px}
 #ati-dbg-head .ati-dbg-ver{color:#8b949e;font-weight:400}
 #ati-dbg-head .ati-dbg-actions{margin-left:auto;display:flex;gap:6px}
@@ -553,7 +634,7 @@ class ATI_Debug_Bar {
 #ati-dbg .ati-dbg-kv{display:grid;grid-template-columns:auto 1fr;gap:2px 10px}
 #ati-dbg .ati-dbg-kv span:nth-child(odd){color:#8b949e;white-space:nowrap}
 #ati-dbg .ati-dbg-empty{color:#8b949e;font-style:italic}
-@media (max-width:600px){#ati-dbg{left:12px;right:12px;max-width:none}}
+@media (max-width:600px){#ati-dbg{left:12px;right:12px;max-width:calc(100vw - 24px)}}
 ';
 	}
 }
