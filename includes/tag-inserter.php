@@ -981,9 +981,13 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 
   // Percorso Meta/n8n. Il Lead viene inviato SOLO su invio realmente riuscito, non a
   // ogni click su "Invia" (che scattava anche sui tentativi falliti da validazione).
-  // Per i provider con evento di successo affidabile (Fluent Forms, Contact Form 7)
-  // si attende l'evento di successo; per tutti gli altri form il comportamento resta
-  // invariato (invio al submit). Il generate_lead GA4 resta separato (pipeline confirmed).
+  // Per i provider con evento di successo affidabile (Fluent Forms, Contact Form 7,
+  // formManageWP se l'evento custom è configurato) si attende l'evento di successo;
+  // per tutti gli altri form il comportamento resta invariato (invio al submit).
+  // Il generate_lead GA4 resta separato (pipeline confirmed).
+  <?php $fst_custom_success = class_exists( 'ATI_GA4_Config' ) ? ATI_GA4_Config::custom_success_event() : trim( (string) get_option( 'ati_ga4_custom_success_event', '' ) ); ?>
+  const fstCustomSuccessEvent = '<?php echo esc_js( $fst_custom_success ); ?>';
+
   function fstBuildLeadPayload(form) {
     const leadPayload = {
       type: 'Lead',
@@ -1000,32 +1004,43 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   function fstHasSuccessHandler(form) {
     if (!form || typeof form.matches !== 'function') return false;
     try {
-      return form.matches('.frm-fluent-form, [class*="fluent_form"], .wpcf7-form');
+      if (form.matches('.frm-fluent-form, [class*="fluent_form"], .wpcf7-form')) return true;
+      // formManageWP emette l'evento custom (es. myFormSuccess) solo dopo la conferma del
+      // server: si attende quello. Senza evento custom configurato il Lead non partirebbe
+      // mai, quindi in quel caso si resta sull'invio al submit.
+      return fstCustomSuccessEvent !== '' && form.matches('.js-ajax-form');
     } catch (err) { return false; }
   }
 
   // Memorizza il payload catturato al submit finché non arriva la conferma di successo.
   const _fstPendingLead = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
-  // Debounce anti doppio-invio: alcuni provider (es. Fluent Forms) emettono l'evento
-  // di successo più di una volta per lo stesso invio.
-  const _fstLeadSent = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+  // Ultimo form in attesa di conferma: serve quando l'evento di successo arriva senza
+  // riferimento al form (es. dispatch su document da uno script esterno).
+  let _fstLastPendingForm = null;
+  // Debounce anti doppio-invio, globale e non per-form: lo stesso invio può produrre più
+  // segnali di successo (Fluent Forms emette l'evento 2 volte; formManageWP emette
+  // myFormSuccess sul form mentre uno script custom può emetterne un altro su document).
+  let _fstLastLeadAt = 0;
 
-  function fstFlushLead(form) {
-    if (form && _fstLeadSent) {
-      const now = new Date().getTime();
-      const prev = _fstLeadSent.get(form) || 0;
-      if (now - prev < 4000) {
+  // Unico punto di uscita del Lead Meta/n8n su conferma di successo.
+  // fallback: payload da usare se non c'è un form né un payload in attesa.
+  function fstFlushLead(form, fallback) {
+    const now = new Date().getTime();
+    if (now - _fstLastLeadAt < 4000) {
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-        console.log('[FST] Lead Meta/n8n gia inviato di recente: doppione ignorato');
+      console.log('[FST] Lead Meta/n8n gia inviato di recente: doppione ignorato');
 <?php endif; ?>
-        return;
-      }
-      _fstLeadSent.set(form, now);
+      return;
     }
+    if (!form && _fstLastPendingForm) form = _fstLastPendingForm;
     const payload = (_fstPendingLead && form && _fstPendingLead.get(form))
-      || (form ? fstBuildLeadPayload(form) : null);
+      || (form ? fstBuildLeadPayload(form) : null)
+      || fallback
+      || null;
     if (!payload) return;
+    _fstLastLeadAt = now;
     if (_fstPendingLead && form) _fstPendingLead.delete(form);
+    if (form === _fstLastPendingForm) _fstLastPendingForm = null;
     sendEvent(payload);
   }
 
@@ -1035,6 +1050,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     if (fstHasSuccessHandler(form)) {
       // Attende l'evento di successo del provider (niente Lead sui tentativi falliti).
       if (_fstPendingLead) _fstPendingLead.set(form, payload);
+      _fstLastPendingForm = form;
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST] Submit AJAX form: Lead Meta/n8n in attesa di conferma di successo', form);
 <?php endif; ?>
@@ -1069,30 +1085,24 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 
   // Conferma di successo: evento JS personalizzato per i form custom.
   // Il form custom emette: document.dispatchEvent(new CustomEvent('<nome>', { detail: { form_id, email, phone } }))
-  <?php $fst_custom_success = class_exists( 'ATI_GA4_Config' ) ? ATI_GA4_Config::custom_success_event() : trim( (string) get_option( 'ati_ga4_custom_success_event', '' ) ); ?>
   <?php if ( '' !== $fst_custom_success ) : ?>
-  document.addEventListener('<?php echo esc_js( $fst_custom_success ); ?>', function (ev) {
+  document.addEventListener(fstCustomSuccessEvent, function (ev) {
     var detail = ev && ev.detail ? ev.detail : {};
     var form = detail.form || (ev && ev.target && ev.target.tagName === 'FORM' ? ev.target : null);
-    var payload;
-    if (form) {
-      payload = (_fstPendingLead && _fstPendingLead.get(form)) || fstBuildLeadPayload(form);
-      if (_fstPendingLead) _fstPendingLead.delete(form);
-    } else {
-      // Nessun form nel DOM: costruisce il payload dai dati dell'evento custom.
-      payload = {
-        type: 'Lead',
-        label: detail.form_id || detail.formId || 'custom',
-        page: window.location.href,
-        customData: { form_name: detail.form_name || detail.form_id || 'custom' }
-      };
-      if (detail.email) payload.email = String(detail.email).trim().toLowerCase();
-      if (detail.phone) payload.phone = String(detail.phone).replace(/\D+/g, '');
-    }
+    // Nessun form nel DOM: payload costruito dai dati dell'evento custom (usato solo se
+    // non c'è nemmeno un form in attesa di conferma).
+    var fallback = {
+      type: 'Lead',
+      label: detail.form_id || detail.formId || 'custom',
+      page: window.location.href,
+      customData: { form_name: detail.form_name || detail.form_id || 'custom' }
+    };
+    if (detail.email) fallback.email = String(detail.email).trim().toLowerCase();
+    if (detail.phone) fallback.phone = String(detail.phone).replace(/\D+/g, '');
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
-    console.log('[FST] Lead Meta/n8n confermato (evento custom <?php echo esc_js( $fst_custom_success ); ?>)');
+    console.log('[FST] Lead Meta/n8n confermato (evento custom ' + fstCustomSuccessEvent + ')');
 <?php endif; ?>
-    sendEvent(payload);
+    fstFlushLead(form, fallback);
   }, false);
   <?php endif; ?>
   

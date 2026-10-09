@@ -2,6 +2,22 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.13.1] - 2026-10-09 — Fix triplo Lead Meta/n8n con formManageWP
+
+### Corretto
+- Con i form di **formManageWP** (`form.js-ajax-form`) un solo invio riuscito mandava
+  **3 Lead** a n8n: uno al `submit` (prima della risposta del server, anche sugli invii
+  poi rifiutati), uno su `myFormSuccess` emesso dal form e uno su un secondo evento di
+  successo emesso dal Custom JS di formManageWP. I due eventi di successo condividevano
+  l'`event_id` (Facebook li deduplicava), quello al submit no.
+- I form `js-ajax-form` ora **attendono l'evento di successo custom** come Fluent Forms e
+  Contact Form 7 (solo se «Evento successo form custom» è configurato; altrimenti resta
+  l'invio al submit, per non perdere il Lead).
+- Il debounce anti doppio-invio (4s) è ora **globale** e copre **tutti** i percorsi di
+  conferma, evento custom incluso (prima era per-form ed escludeva l'evento custom).
+- Un evento di successo senza riferimento al form usa il payload catturato al submit
+  dell'ultimo form in attesa, così email/telefono per l'Advanced Matching non si perdono.
+
 ## [0.13.0] - 2026-07-29 — Widget di debug del tracking sul front-end
 
 ### Aggiunto
