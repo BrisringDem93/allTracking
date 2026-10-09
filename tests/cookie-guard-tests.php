@@ -139,7 +139,9 @@ ok( ATI_Cookie_Rules::is_allowlisted( 'woocommerce_cart_hash' ), 'carrello WooCo
 ok( ATI_Cookie_Rules::is_allowlisted( 'cmplz_marketing' ), 'cookie del CMP Complianz protetto' );
 ok( ATI_Cookie_Rules::is_allowlisted( '_iub_cs-s4597678' ), 'cookie del CMP iubenda protetto' );
 ok( ATI_Cookie_Rules::is_allowlisted( 'OptanonConsent' ), 'cookie del CMP OneTrust protetto' );
-ok( ATI_Cookie_Rules::is_allowlisted( 'fst_uid' ), 'cookie del plugin protetto' );
+ok( ATI_Cookie_Rules::is_allowlisted( 'ati_test' ), 'cookie tecnici del plugin (ati_*) protetti' );
+ok( ! ATI_Cookie_Rules::is_allowlisted( 'fst_uid' ), 'fst_uid NON protetto: va cancellato se il consenso marketing viene revocato' );
+ok( ! ATI_Cookie_Rules::is_allowlisted( 'fst_clid' ), 'fst_clid NON protetto: va cancellato se il consenso marketing viene revocato' );
 ok( ! ATI_Cookie_Rules::is_allowlisted( '_ga' ), '_ga non è in allowlist' );
 
 $GLOBALS['__ati_opts'][ ATI_Cookie_Rules::OPTION_ALLOWLIST ] = "mio_cookie_*\naltro_esatto";
@@ -293,7 +295,7 @@ foreach ( $covered as $cookie => $expected_category ) {
 ok( true, 'predefinite: con il consenso della categoria tutti i cookie coperti passano' );
 
 // Nessuna regola predefinita deve toccare i cookie di sessione o del CMP.
-$untouched = array( 'wordpress_logged_in_x', 'wp-settings-1', 'PHPSESSID', 'woocommerce_cart_hash', 'cmplz_marketing', '_iub_cs-s123', 'CookieConsent', 'OptanonConsent', 'fst_uid', 'fst_clid' );
+$untouched = array( 'wordpress_logged_in_x', 'wp-settings-1', 'PHPSESSID', 'woocommerce_cart_hash', 'cmplz_marketing', '_iub_cs-s123', 'CookieConsent', 'OptanonConsent', '_iub_previous_preference_id', 'ati_test' );
 $hit       = '';
 foreach ( $untouched as $cookie ) {
 	if ( ATI_Cookie_Rules::evaluate( $cookie, '', $no_consent, $defaults )['blocked'] ) {
@@ -313,13 +315,57 @@ ok( $valid, 'tutti i preset sono regole valide' );
 // Nessun preset deve colpire un cookie protetto.
 $collision = '';
 foreach ( $presets as $preset ) {
-	foreach ( array( 'wordpress_logged_in_x', 'PHPSESSID', 'cmplz_marketing', 'woocommerce_cart_hash', 'fst_uid' ) as $protected ) {
+	foreach ( array( 'wordpress_logged_in_x', 'PHPSESSID', 'cmplz_marketing', 'woocommerce_cart_hash', 'ati_test' ) as $protected ) {
 		if ( ATI_Cookie_Rules::matches( $preset, $protected ) ) {
 			$collision = $preset['value'] . ' -> ' . $protected;
 		}
 	}
 }
 ok( '' === $collision, 'nessun preset colpisce cookie di sistema' . ( '' !== $collision ? " ($collision)" : '' ) );
+
+// Cookie del plugin e di GoHighLevel: marketing, cancellati alla revoca del consenso.
+foreach ( array( 'fst_uid', 'fst_clid', 'lc_session_tk_57c898690b1f4d6faa9b01dedce3b216' ) as $cookie ) {
+	$ev = ATI_Cookie_Rules::evaluate( $cookie, '', $no_consent, $defaults );
+	ok( $ev['blocked'] && 'marketing' === $ev['category'] && 'block_delete' === $ev['action'], "predefinite: $cookie bloccato e cancellato senza consenso marketing" );
+	$ev = ATI_Cookie_Rules::evaluate( $cookie, '', array( 'marketing' => true ), $defaults );
+	ok( ! $ev['blocked'], "predefinite: $cookie ammesso con consenso marketing" );
+}
+ok( ! ATI_Cookie_Rules::evaluate( 'lc_other', '', $no_consent, $defaults )['blocked'], 'regola GHL limitata a lc_session_tk_*' );
+
+// -------------------------------------------------------------------------
+section( 'Nuovi preset per regole già salvate (migrazione una tantum)' );
+
+$opt_rules = ATI_Cookie_Rules::OPTION_RULES;
+$opt_seen  = ATI_Cookie_Rules::OPTION_PRESETS_SEEN;
+
+// Installazione con regole predefinite mai salvate: nessuna scrittura delle regole.
+unset( $GLOBALS['__ati_opts'][ $opt_rules ], $GLOBALS['__ati_opts'][ $opt_seen ] );
+ok( 0 === ATI_Cookie_Rules::maybe_add_new_presets(), 'predefinite mai salvate: nessuna regola aggiunta' );
+ok( ! array_key_exists( $opt_rules, $GLOBALS['__ati_opts'] ), 'predefinite mai salvate: restano virtuali (opzione regole non creata)' );
+
+// Regole salvate prima della 0.14.0 (una regola personalizzata + _ga): arrivano i 3 nuovi preset.
+unset( $GLOBALS['__ati_opts'][ $opt_seen ] );
+$GLOBALS['__ati_opts'][ $opt_rules ] = array(
+	array( 'enabled' => 1, 'label' => 'GA', 'category' => 'analytics', 'match' => 'wildcard', 'value' => '_ga*', 'value2' => '', 'ci' => 0, 'action' => 'block_delete' ),
+	array( 'enabled' => 1, 'label' => 'Mia', 'category' => 'marketing', 'match' => 'equals', 'value' => 'mio_cookie', 'value2' => '', 'ci' => 0, 'action' => 'block' ),
+);
+ok( 3 === ATI_Cookie_Rules::maybe_add_new_presets(), 'regole salvate prima della 0.14.0: aggiunti i 3 nuovi preset' );
+$after = ATI_Cookie_Rules::rules();
+ok( 5 === count( $after ) && 'mio_cookie' === $after[1]['value'], 'regole esistenti conservate, nuove in coda' );
+ok( ATI_Cookie_Rules::evaluate( 'fst_uid', '', $no_consent, ATI_Cookie_Rules::active_rules() )['blocked'], 'dopo la migrazione fst_uid è coperto' );
+ok( 0 === ATI_Cookie_Rules::maybe_add_new_presets(), 'seconda esecuzione: nessuna aggiunta' );
+
+// Preset eliminato dall'amministratore dopo la migrazione: non viene riproposto.
+$GLOBALS['__ati_opts'][ $opt_rules ] = array_slice( $after, 0, 2 );
+ok( 0 === ATI_Cookie_Rules::maybe_add_new_presets() && 2 === count( ATI_Cookie_Rules::rules() ), 'preset eliminato dopo: non riproposto' );
+
+// Regola con lo stesso valore già presente: niente duplicati.
+unset( $GLOBALS['__ati_opts'][ $opt_seen ] );
+$GLOBALS['__ati_opts'][ $opt_rules ] = array(
+	array( 'enabled' => 0, 'label' => 'fst_uid a mano', 'category' => 'marketing', 'match' => 'equals', 'value' => 'fst_uid', 'value2' => '', 'ci' => 0, 'action' => 'block' ),
+);
+ok( 2 === ATI_Cookie_Rules::maybe_add_new_presets() && 3 === count( ATI_Cookie_Rules::rules() ), 'valore già presente (anche disattivato): non duplicato' );
+unset( $GLOBALS['__ati_opts'][ $opt_rules ], $GLOBALS['__ati_opts'][ $opt_seen ] );
 
 // -------------------------------------------------------------------------
 section( 'Varianti di dominio per la cancellazione lato server' );

@@ -39,5 +39,9 @@ function ati_cookie_guard_bootstrap() {
 
 	// Pulizia server-side (opt-in): prima di qualunque output.
 	add_action( 'init', array( 'ATI_Cookie_Guard', 'server_cleanup' ), 1 );
+
+	// Nuovi preset per chi aveva già salvato le proprie regole (una volta sola).
+	// Prima della pulizia server-side, così le regole aggiunte valgono già in questa richiesta.
+	add_action( 'init', array( 'ATI_Cookie_Rules', 'maybe_add_new_presets' ), 0 );
 }
 add_action( 'plugins_loaded', 'ati_cookie_guard_bootstrap', 21 );

@@ -22,9 +22,22 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 - Test: visibilità per modalità/login/permessi/costante e oscuramento dei dati in modalità
   pubblica (`tests/debug-bar-tests.php`, +14), limiti di posizione del trascinamento
   (`tests/debug-bar-tests.js`, +5), consenso cambiato dopo il caricamento e motore dei
-  cookie caricato dopo il widget (`tests/debug-bar-tests.js`, +5).
+  cookie caricato dopo il widget (`tests/debug-bar-tests.js`, +5), regole `fst_*`/GHL e
+  migrazione dei preset (`tests/cookie-guard-tests.php`, +17).
 
 ### Corretto
+- **`fst_uid` e `fst_clid` restavano dopo la revoca del consenso marketing**: erano
+  nell'allowlist non modificabile del blocco cookie, quindi nessuna regola poteva
+  cancellarli. Ora l'allowlist protegge solo i cookie tecnici del plugin (`ati_*`) e due
+  nuove regole predefinite marketing (`block_delete`) li cancellano quando il consenso
+  viene ritirato. Vengono sempre scritti solo con il consenso, come prima.
+- **Cookie GoHighLevel/LeadConnector scritto dopo «Rifiuta»**: nuova regola predefinita
+  marketing `lc_session_tk_*` (osservato su staging2.milanoviainganni.it dopo il rifiuto;
+  il tag GHL va comunque condizionato al consenso in GTM).
+- Le tre regole nuove arrivano anche a chi aveva già salvato le proprie regole:
+  `ATI_Cookie_Rules::maybe_add_new_presets()` (su `init`) le aggiunge **una sola volta**,
+  in coda e attive, senza duplicare valori già presenti e senza riproporle se vengono poi
+  eliminate (opzione `ati_cg_presets_seen`, rimossa alla disinstallazione).
 - **Consenso marketing iubenda mai riconosciuto con cookie a nome prefissato**
   (`_iub_cs-s4597678`, il formato usato da staging2.milanoviainganni.it): il percorso
   Meta/Pixel (`tag-inserter.php`) cercava solo `_iub_cs-<numero>`. Effetti: lato server

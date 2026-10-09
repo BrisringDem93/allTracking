@@ -66,6 +66,7 @@ $options = array(
 	'ati_cg_sweep_duration',
 	'ati_cg_rules',
 	'ati_cg_allowlist',
+	'ati_cg_presets_seen',
 	// Widget di debug del front-end.
 	'ati_debug_bar_mode',
 );
