@@ -975,6 +975,13 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     }
     if (phoneField && phoneField.value.trim()) {
       contact.phone = phoneField.value.replace(/\D+/g, '');
+      // formManageWP divide il telefono: prefisso nel menu .fmwp-phone-prefix (senza name),
+      // solo numero nazionale nel campo. Meta vuole il numero con prefisso internazionale.
+      const prefixSelect = form.querySelector('select.fmwp-phone-prefix');
+      const prefix = prefixSelect ? String(prefixSelect.value || '').replace(/\D+/g, '') : '';
+      if (prefix && contact.phone) {
+        contact.phone = prefix + contact.phone;
+      }
     }
     return contact;
   }

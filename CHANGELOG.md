@@ -17,6 +17,10 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
   conferma, evento custom incluso (prima era per-form ed escludeva l'evento custom).
 - Un evento di successo senza riferimento al form usa il payload catturato al submit
   dell'ultimo form in attesa, così email/telefono per l'Advanced Matching non si perdono.
+- Telefono per l'Advanced Matching con i form formManageWP: il prefisso internazionale
+  scelto nel menu `.fmwp-phone-prefix` viene anteposto al numero nazionale
+  (`393331234567` invece di `3331234567`). Prima lo forniva il Custom JS di formManageWP
+  (patch su `window.fetch`, ora da rimuovere: formManageWP emette `myFormSuccess` nativo).
 
 ## [0.13.0] - 2026-07-29 — Widget di debug del tracking sul front-end
 
