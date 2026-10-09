@@ -104,8 +104,12 @@ function is_admin() {
 function wp_doing_ajax() {
 	return false;
 }
+/**
+ * Utente loggato: falso per default, pilotabile dai test via $GLOBALS.
+ */
+$GLOBALS['__ati_logged_in'] = false;
 function is_user_logged_in() {
-	return false;
+	return ! empty( $GLOBALS['__ati_logged_in'] );
 }
 
 /**

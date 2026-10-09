@@ -2,6 +2,167 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.13.1] - 2026-10-09 — Fix triplo Lead Meta/n8n con formManageWP
+
+### Corretto
+- Con i form di **formManageWP** (`form.js-ajax-form`) un solo invio riuscito mandava
+  **3 Lead** a n8n: uno al `submit` (prima della risposta del server, anche sugli invii
+  poi rifiutati), uno su `myFormSuccess` emesso dal form e uno su un secondo evento di
+  successo emesso dal Custom JS di formManageWP. I due eventi di successo condividevano
+  l'`event_id` (Facebook li deduplicava), quello al submit no.
+- I form `js-ajax-form` ora **attendono l'evento di successo custom** come Fluent Forms e
+  Contact Form 7 (solo se «Evento successo form custom» è configurato; altrimenti resta
+  l'invio al submit, per non perdere il Lead).
+- Il debounce anti doppio-invio (4s) è ora **globale** e copre **tutti** i percorsi di
+  conferma, evento custom incluso (prima era per-form ed escludeva l'evento custom).
+- Un evento di successo senza riferimento al form usa il payload catturato al submit
+  dell'ultimo form in attesa, così email/telefono per l'Advanced Matching non si perdono.
+- Telefono per l'Advanced Matching con i form formManageWP: il prefisso internazionale
+  scelto nel menu `.fmwp-phone-prefix` viene anteposto al numero nazionale
+  (`393331234567` invece di `3331234567`). Prima lo forniva il Custom JS di formManageWP
+  (patch su `window.fetch`, ora da rimuovere: formManageWP emette `myFormSuccess` nativo).
+
+## [0.13.0] - 2026-07-29 — Widget di debug del tracking sul front-end
+
+### Aggiunto
+- **Widget di diagnostica a schermo** (`includes/debug-bar/`, `assets/js/debug-bar.js`):
+  pannello richiudibile in basso a destra, visibile **solo a un utente loggato con
+  permessi di amministrazione e solo con `WP_DEBUG` attivo**. Risponde alla domanda
+  «questo cookie ci dovrebbe essere o no?» senza aprire i DevTools. Cinque schede:
+  - **Consenso** — stato per categoria affiancato lato *server* (cookie della richiesta) e
+    lato *browser in tempo reale*, CMP configurato e CMP realmente rilevati nelle due
+    viste, valore dei cookie di consenso personalizzati. Si aggiorna sugli eventi dei CMP
+    supportati, senza ricaricare la pagina.
+  - **Cookie** — tutti i cookie leggibili da JavaScript con l'esito che hanno con le regole
+    attive (allowlist / consentito / da bloccare / da cancellare), categoria e regola che
+    li colpisce; in coda i cookie ricevuti **solo dal server** (`HttpOnly` e di terze
+    parti), che JavaScript non può vedere.
+  - **Attesi** — per ogni cookie del plugin l'esito **atteso** in base alla configurazione
+    e al consenso (`deve esserci` / `non deve esserci` / `dipende`), confrontato con la
+    realtà: un cookie presente che non dovrebbe esserci viene segnalato come errore, uno
+    atteso e assente come avviso, con la motivazione in chiaro.
+  - **Blocco** — modalità del blocco cookie, se sta davvero agendo su questa richiesta,
+    regole attive, pulizia lato server, passate periodiche e contatori reali di scritture
+    bloccate e cookie cancellati nella pagina corrente.
+  - **Tag & GA4** — tag client-side configurati, cosa è realmente caricato nella pagina
+    (`dataLayer`, `gtag`, `fbq`, bridge GA4, script dei campi hidden), stato della pipeline
+    GA4 server-side (`client_id`/`session_id` reali, conteggi della coda, prossimo worker)
+    ed endpoint n8n / credenziali Meta CAPI come **sola presenza**.
+- Pulsante **Copia JSON**: fotografia completa (server + browser) negli appunti, pronta da
+  incollare in un ticket. Nessun segreto: API Secret GA4, token CAPI, header di
+  autenticazione e path del webhook n8n non vengono mai inviati al browser — solo flag di
+  presenza — e del webhook si mostra il solo host.
+- Nuova impostazione **«Widget di debug (front-end)»** nel tab *Generale*:
+  `Automatico` (default, solo con `WP_DEBUG`), `Sempre`, `Mai`. La costante
+  `ATI_DEBUG_BAR` in `wp-config.php` ha la precedenza su tutto (`true` forza il widget
+  anche senza `WP_DEBUG`, `false` lo spegne in ogni caso).
+- `tests/debug-bar-tests.php` (56 test sulla logica pura delle attese e della
+  diagnostica): derivazione del cookie di sessione GA4 dal Measurement ID, attese per
+  ciascun cookie in funzione di tag attivi / consenso / GTM / «disattiva per utenti
+  loggati», tag spuntato senza ID, e segnalazioni (CMP assente, blocco escluso per i
+  loggati, regole a zero, GA4 server-side incompleto, coda in errore).
+- `tests/debug-bar-tests.js` (24 test, `window`/`document` simulati) sul confronto
+  atteso/reale nel browser: match esatto e per prefisso, classificazione dell'esito,
+  isolamento dei cookie visibili solo al server e conteggio dei problemi **senza
+  doppioni** (un cookie bloccato dalle regole e già segnalato dalle attese è un problema,
+  non due). Le funzioni sono esposte in sola lettura su `window.atiDebugBarApi`, quindi
+  interrogabili anche dalla console del browser.
+- Filtri: `ati_debug_bar_visible`, `ati_debug_bar_capability` (per default
+  `manage_options`; con `read` il widget è visibile a qualunque utente loggato),
+  `ati_debug_expected_cookies`, `ati_debug_notices`.
+
+### Sicurezza
+- Il widget è di **sola lettura**: non scrive cookie, non invia eventi, non altera il
+  tracking. Non viene stampato per i visitatori anonimi, quindi non può modificare quello
+  che vede un utente finale, e non compare in admin, AJAX, REST, cron, feed ed embed.
+- Il motore di valutazione **non è duplicato**: il widget usa `atiCookieGuardApi`, esposto
+  dallo stesso `assets/js/cookie-guard.js` del front-end. Quando il blocco non è attivo
+  sulla richiesta (caso tipico: escluso per gli utenti loggati) il motore viene caricato
+  con `mode=off`, che non installa nulla — e il pannello dichiara che gli esiti sono una
+  simulazione, invitando a verificare in navigazione anonima.
+- Nessun valore di cookie viene inviato dal server: la fotografia contiene solo nomi,
+  esiti e flag. I valori mostrati nella scheda Consenso sono letti nel browser e troncati.
+
+## [0.12.0] - 2026-07-29 — Blocco dei cookie senza consenso
+
+### Aggiunto
+- **Nuovo tab "Blocco Cookie"** (`includes/cookie-guard/`, `assets/js/cookie-guard.js`):
+  impedisce la scrittura dei cookie non consentiti e cancella quelli già presenti, con
+  regole **granulari per categoria di consenso**. Il guard viene stampato inline in
+  `wp_head` a **priorità 0** — prima del container GTM e di qualunque script accodato —
+  e sostituisce il setter di `document.cookie`: la valutazione avviene quindi *prima*
+  che un pixel possa scrivere. Una passata periodica cancella inoltre i cookie
+  preesistenti che violano le regole.
+- **Regole con operatori espliciti**: è esattamente / contiene / inizia con / finisce con
+  / *inizia con … e finisce con …* / pattern con `*` e `?` / regex / appartiene al
+  dominio (sottodomini inclusi). Ogni regola ha categoria
+  (`marketing`, `analytics`, `preferences`, `always`), opzione maiuscole/minuscole e
+  azione (blocca la scrittura, cancella se presente, entrambe). Vince la prima regola
+  che blocca; una regola blocca **solo quando manca il consenso della sua categoria**.
+- **22 regole predefinite ATTIVE out of the box** (GA `_ga`/`_ga_*`/`_gid`/`_gat*`,
+  Google Ads/DoubleClick `_gcl_*`/`_gac_*`/`IDE`, Meta `_fbp`/`_fbc`, Hotjar, Clarity,
+  Matomo, UET, LinkedIn, TikTok, Pinterest, X, Yandex, Snapchat): il blocco funziona
+  appena installato, senza configurare nulla. Le regole sono modificabili dal backend —
+  si disattivano una per una, si eliminano (svuotando il campo «Valore») o si
+  ripristinano con **"Ripristina configurazione predefinita"**. Nessuna regola
+  predefinita colpisce cookie di sistema o del CMP (verificato dai test).
+- Le regole predefinite sono un **default virtuale**: finché l'amministratore non salva,
+  l'opzione `ati_cg_rules` non esiste e `rules()` restituisce `default_rules()`. Chi
+  elimina tutte le regole e salva non se le vede riapparire (opzione salvata vuota e
+  opzione mai salvata sono stati distinti). Filtro `ati_cookie_guard_default_rules`.
+- **Pannello di controllo del consenso**: stato per categoria affiancato lato **server**
+  (cookie della richiesta) e lato **browser in tempo reale**, CMP rilevati, elenco dei
+  cookie presenti con l'esito che ciascuno avrebbe, elenco dei cookie ricevuti dal
+  server (inclusi gli `HttpOnly`) e **tester** interattivo su un nome di cookie.
+  Il pannello usa lo stesso `cookie-guard.js` del front-end in sola lettura
+  (`mode=off`, `expose=true`): l'anteprima non può divergere dal comportamento reale.
+- **Rilevamento consenso granulare** (`ATI_Cookie_Consent`) per Complianz, iubenda,
+  Cookiebot e OneTrust, con categoria "preferenze/funzionali" (nuova) oltre a marketing
+  e analytics. Opzione per **forzare un CMP** quando sul sito ne convivono più di uno e
+  indici dei purpose iubenda configurabili (default 3/4/5).
+- **Pulizia lato server opzionale** (`ati_cg_server_cleanup`, disattivata): invalida via
+  `Set-Cookie` scaduto i cookie della richiesta che violano le regole, su tutte le
+  varianti di dominio. Intercetta anche i cookie scritti da header HTTP, invisibili a
+  JavaScript.
+- `tests/cookie-guard-tests.php` (129 test sul motore di regole PHP) e
+  `tests/cookie-guard-tests.js` (87 test sul guard con DOM simulato). Gli stessi casi di
+  matching sono verificati su entrambe le implementazioni, che devono restare allineate.
+  Coperti anche: copertura delle regole predefinite sui nomi di cookie reali,
+  disattivazione di una singola regola predefinita, salvataggio vuoto ed esclusione
+  degli utenti loggati.
+- Filtri: `ati_cookie_guard_protected_patterns`, `ati_cookie_guard_active`,
+  `ati_cookie_guard_script_config`, `ati_cookie_guard_consent_state`.
+
+### Sicurezza
+- **Attivo di default** (modalità `enforce`) con le regole predefinite. Una regola blocca
+  soltanto quando manca il consenso della sua categoria: con il consenso concesso il
+  comportamento del sito è identico alla 0.11.0. Si spegne con un menu a tendina
+  (**Disattivato**, che conserva le regole) o si porta in **Monitoraggio**, che logga in
+  console cosa bloccherebbe senza toccare nulla.
+- Il tab avvisa in modo esplicito quando **nessun CMP è rilevato** e il blocco è attivo:
+  in quello scenario il consenso risulterebbe sempre assente e i cookie di analytics e
+  marketing verrebbero bloccati per tutti.
+- **Allowlist non modificabile** sui cookie che romperebbero il sito o cancellerebbero la
+  scelta di consenso: sessione WordPress (`wordpress*`, `wp-*`, `wp_*`), `PHPSESSID`,
+  WooCommerce, cookie dei CMP (`cmplz_*`, `_iub_cs-*`, `CookieConsent*`,
+  `OptanonConsent`, `cookielawinfo-*`, `cky-*`, …) e del plugin (`fst_*`, `ati_*`).
+  Ha la precedenza su qualunque regola, categoria `always` inclusa. Estendibile con
+  un'allowlist personalizzata.
+- Le **cancellazioni di cookie non vengono mai bloccate** (`expires` nel passato o
+  `max-age<=0`): altrimenti nessuno potrebbe più rimuovere un cookie.
+- Il blocco **non si applica agli utenti loggati** per default.
+- Qualunque eccezione nella valutazione lascia passare la scrittura: il guard non può
+  rompere una funzionalità del sito.
+- Le regex fornite dall'amministratore vengono compilate in modo isolato: una regex non
+  valida non produce match né errori, ed è segnalata nel pannello.
+
+### Invariato
+- GA4 server-side, Meta Pixel / Conversions API, n8n, compilazione dei campi hidden e
+  rilevamento del consenso marketing esistente: nessuna logica modificata. Il consenso
+  marketing e quello analytics del blocco cookie **delegano** alle funzioni già in uso
+  (`ati_has_marketing_consent()`, `ATI_Consent_Service::has_analytics_consent()`), così
+  le due parti non possono divergere.
+
 ## [0.11.0] - 2026-07-29 — Compilazione automatica dei campi hidden nei form
 
 ### Aggiunto
