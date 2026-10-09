@@ -2,6 +2,38 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.14.1] - 2026-10-09 — Consenso applicato subito, senza ricaricare la pagina
+
+### Corretto
+- **Dopo «Accetta» i cookie consentiti venivano bloccati fino al reload.** Il blocco cookie
+  teneva in memoria lo stato del consenso e lo ricalcolava solo durante le passate
+  periodiche (ogni 2s per il primo minuto) o sugli eventi dei CMP. iubenda non emette
+  eventi: scrive solo `_iub_cs-*`. Chi accettava dopo l'ultima passata restava «senza
+  consenso» per il guard, che bloccava proprio le scritture partite subito dopo
+  l'accettazione: `fst_uid` e anche **`_ga` scritto da GTM** (riprodotto in Chrome: 2
+  scritture bloccate). Ora il consenso si ricalcola appena `document.cookie` cambia; vale
+  anche per la revoca, che prima non bloccava le scritture successive fino alla passata.
+- **Consenso marketing non visto dopo «Accetta» se l'API iubenda restituiva ancora le
+  preferenze del caricamento**: `hasMarketingConsent()` dava la precedenza a
+  `_iub.cs.api.getPreferences()` e non guardava più il cookie. Ora decide il cookie
+  `_iub_cs-*` (la stessa fonte di server e blocco cookie); l'API è solo un ripiego quando
+  il cookie non c'è ancora.
+- **`fst_clid` scritto solo nei primi 4 secondi o su un evento custom**: lo script inline
+  emette ora `ati:marketing-consent` quando il consenso marketing cambia, e la
+  compilazione dei campi hidden persiste subito i click id in memoria.
+- Versione 0.14.1 anche per il cache-busting di `form-fields.js` (la versione dell'asset è
+  quella del plugin, e su staging girava già la 0.14.0).
+
+### Verifica
+- Chrome headless con gli script reali del plugin (guard + script inline + campi hidden),
+  visitatore da `?fbclid=…` che accetta senza ricaricare: API iubenda con dati vecchi, API
+  assente, «Accetta» dopo 65s → `fst_uid`, `fst_clid` e `_ga` presenti entro 2s, nessun
+  blocco. Con il codice precedente: `marketingConsent` falso (API vecchia) oppure `_ga` e
+  `fst_uid` bloccati.
+- Test: `tests/cookie-guard-tests.js` +4 (scrittura subito dopo «Accetta» senza API né
+  passate, revoca), `tests/form-fields-tests.js` +3 (persistenza su
+  `ati:marketing-consent`). Falliscono sul codice precedente.
+
 ## [0.14.0] - 2026-10-09 — Widget di debug: modalità pubblica e trascinamento
 
 ### Aggiunto

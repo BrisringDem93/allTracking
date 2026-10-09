@@ -371,6 +371,13 @@
       if (form) fill(form);
     }, true);
 
+    // Consenso marketing cambiato senza reload (emesso dallo script inline del plugin):
+    // i click id in memoria diventano persistibili (fst_clid) e i campi si ricompilano.
+    document.addEventListener('ati:marketing-consent', function () {
+      syncStore();
+      fill(document);
+    }, false);
+
     // I cookie _fbp/_fbc compaiono solo dopo l'accettazione del banner: si ripassa.
     if (CFG.consentEvent) {
       document.addEventListener(CFG.consentEvent, function () {

@@ -225,6 +225,26 @@ console.log('\n== Consenso dato dopo il load: lo storage viene idratato e persis
   ok(!!r.cookies['fst_clid'], 'dopo il consenso il click id viene persistito');
 }
 
+console.log('\n== Consenso dato dopo le passate differite: fst_clid scritto sull\'evento del plugin ==');
+{
+  const gclid = makeInput({ name: 'gclid' });
+  const windowRef = {};
+  const r = run({
+    inputs: [gclid],
+    search: '?gclid=LATER',
+    consent: false,
+    onWindow: w => { windowRef.w = w; },
+  });
+  // Le passate a 1,5s e 4s girano PRIMA della scelta (visitatore che legge la pagina).
+  r.timers.forEach(fn => fn());
+  ok(!r.cookies['fst_clid'], 'passate differite senza consenso: nessun cookie');
+  // «Accetta» dopo: lo script inline aggiorna marketingConsent ed emette ati:marketing-consent.
+  windowRef.w.marketingConsent = true;
+  ok(!!(r.listeners['ati:marketing-consent'] || []).length, 'in ascolto di ati:marketing-consent');
+  (r.listeners['ati:marketing-consent'] || []).forEach(fn => fn({ detail: { granted: true } }));
+  ok(!!r.cookies['fst_clid'], 'dopo l\'evento del plugin il click id viene persistito senza reload');
+}
+
 console.log('\n== Refill in capture sul submit (cookie comparso dopo il consenso) ==');
 {
   const fbp = makeInput({ name: 'fbp' });

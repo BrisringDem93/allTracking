@@ -154,6 +154,28 @@ section('Il consenso sblocca la scrittura (senza ricaricare)');
   env.write('_ga=consentito');
   ok(env.store._ga === 'consentito', 'dopo il consenso: consentito, senza ricaricare la pagina');
 }
+{
+  // Caso reale iubenda: nessun evento, nessuna chiamata all'API, nessuna passata periodica
+  // in corso. Il CMP scrive il suo cookie e GTM scrive _ga e fst_uid nello stesso istante.
+  const env = makeEnv({ config: { rules: [
+    rule({ category: 'analytics', match: 'wildcard', value: '_ga*' }),
+    rule({ category: 'marketing', match: 'equals', value: 'fst_uid' }),
+  ] } });
+  env.write('_ga=prima');
+  ok(!env.has('_ga'), 'iubenda, prima della scelta: _ga bloccato');
+  const iub = encodeURIComponent(JSON.stringify({ purposes: { 1: true, 4: true, 5: true } }));
+  env.write('_iub_cs-s4597678=' + iub + '; path=/');
+  env.write('_ga=GA1.1.2.2; path=/');
+  env.write('fst_uid=abc; path=/');
+  ok(env.store._ga === 'GA1.1.2.2', 'iubenda, subito dopo «Accetta»: _ga scritto senza attendere la passata periodica');
+  ok(env.store.fst_uid === 'abc', 'iubenda, subito dopo «Accetta»: fst_uid scritto senza ricaricare');
+
+  // Revoca: il cookie del CMP cambia e il consenso viene ricalcolato al volo.
+  const rej = encodeURIComponent(JSON.stringify({ purposes: { 1: true, 4: false, 5: false } }));
+  env.write('_iub_cs-s4597678=' + rej + '; path=/');
+  env.write('_ga=dopo_revoca; path=/');
+  ok(env.store._ga === 'GA1.1.2.2', 'iubenda, dopo la revoca: nuova scrittura di _ga bloccata');
+}
 
 // -------------------------------------------------------------------------
 section('Separazione delle categorie');

@@ -1350,11 +1350,17 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       try { if (window.cmplz_has_consent('marketing')) return true; } catch(e) {}
     }
 
-    // 3. iubenda: consenso globale oppure purpose 5 (Marketing)
-    var iubendaApiConsent = iubendaMarketingConsent(readIubendaPreferences());
-    if (iubendaApiConsent !== null) return iubendaApiConsent;
+    // 3. iubenda: consenso globale oppure purpose 5 (Marketing).
+    // Il cookie _iub_cs-* è la scelta salvata da iubenda e la stessa fonte letta dal
+    // server e dal blocco cookie: se c'è, decide lui. L'API è solo un ripiego quando il
+    // cookie manca, perché dopo «Accetta» può restituire ancora le preferenze lette al
+    // caricamento, e il consenso non verrebbe visto fino al reload.
     var iub = document.cookie.match(/(?:^|; )_iub_cs-[\w-]+=([^;]+)/);
     if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); var iubCookieConsent = iubendaMarketingConsent(d); if (iubCookieConsent !== null) return iubCookieConsent; } catch(e) {} }
+    if (!iub) {
+      var iubendaApiConsent = iubendaMarketingConsent(readIubendaPreferences());
+      if (iubendaApiConsent !== null) return iubendaApiConsent;
+    }
 
     // 4. Cookiebot: CookieConsent con marketing:true
     if (window.Cookiebot && window.Cookiebot.consent && window.Cookiebot.consent.marketing === true) return true;
@@ -1471,6 +1477,14 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       loadFacebookPixelDynamically();
     }else{
       removeFacebookPixel();
+    }
+
+    // Avvisa gli altri script del plugin (campi hidden: persistenza di fst_clid) che il
+    // consenso marketing è cambiato, senza attendere un reload.
+    if(changed){
+      try {
+        document.dispatchEvent(new CustomEvent('ati:marketing-consent', { detail: { granted: newConsent } }));
+      } catch(e) {}
     }
 
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
