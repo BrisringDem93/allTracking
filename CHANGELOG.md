@@ -25,6 +25,15 @@ Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
   cookie caricato dopo il widget (`tests/debug-bar-tests.js`, +5).
 
 ### Corretto
+- **Consenso marketing iubenda mai riconosciuto con cookie a nome prefissato**
+  (`_iub_cs-s4597678`, il formato usato da staging2.milanoviainganni.it): il percorso
+  Meta/Pixel (`tag-inserter.php`) cercava solo `_iub_cs-<numero>`. Effetti: lato server
+  `ati_has_marketing_consent()` era sempre falso (Pixel non stampato nella pagina,
+  `fbclid`/`_fbc` mai salvati, meno dati di matching verso n8n/Meta CAPI, segnale ads del
+  GA4 server-side negato, colonna «Server» del widget sempre «assente»); nel browser il
+  consenso iniziale era falso e veniva recuperato solo se l'API iubenda era già pronta.
+  Ora i 4 controlli accettano qualunque suffisso, come `ATI_Cookie_Consent`, il blocco
+  cookie e il GA4 server-side (che già lo facevano).
 - **Il widget non vedeva il consenso dato dopo il caricamento della pagina** (es. banner
   iubenda accettato): ascoltava solo eventi che iubenda non emette, quindi serviva
   ricaricare. Ora osserva `document.cookie` (ogni secondo) e si aggiorna appena il CMP
