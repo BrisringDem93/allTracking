@@ -306,8 +306,11 @@
   }
 
   var _consent = null;
+  // document.cookie al momento dell'ultimo calcolo del consenso.
+  var _consentRaw = null;
 
   function refreshConsent() {
+    _consentRaw = rawCookies();
     _consent = {
       necessary: true,
       preferences: detectCategory('preferences'),
@@ -318,8 +321,17 @@
     return _consent;
   }
 
+  /**
+   * Consenso corrente. Si ricalcola appena document.cookie cambia: alcuni CMP (iubenda)
+   * scrivono solo il proprio cookie, senza eventi, e chi accetta dopo l'ultima passata
+   * periodica verrebbe trattato come senza consenso fino al reload — bloccando proprio le
+   * scritture (_ga, _fbp, fst_uid) che partono subito dopo l'accettazione.
+   */
   function currentConsent() {
-    return _consent || refreshConsent();
+    if (!_consent || rawCookies() !== _consentRaw) {
+      return refreshConsent();
+    }
+    return _consent;
   }
 
   // =========================================================================

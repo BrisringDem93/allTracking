@@ -2,6 +2,114 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.14.2] - 2026-10-13 — Un solo `external_id` per visitatore, nessun evento doppio
+
+### Corretto
+- **Due (o più) `external_id` per lo stesso visitatore** quando il consenso marketing c'era
+  già al caricamento ma il cookie `fst_uid` no (consenso dato prima dell'installazione del
+  plugin, cookie cancellato o scaduto, scrittura bloccata dal blocco cookie fino alla
+  0.14.0). Il PageView partiva senza cookie e il server generava un id; finché la risposta
+  non tornava — il server attende n8n, fino a 5 s — ogni altra richiesta senza cookie ne
+  riceveva **un altro**, e al primo segnale del CMP il browser ne creava **un terzo**, poi
+  sovrascritto dal `Set-Cookie` del server. Risultato: PageView, eventi, Pixel e campo
+  hidden del form con id diversi. Ora, con il consenso già presente, lo script inline crea
+  l'id **prima di inviare qualsiasi richiesta**: il server lo riceve sempre dal cookie.
+- **`event_id` condiviso tra eventi ravvicinati**: l'id restava in memoria fino alla
+  risposta del server, quindi due eventi inviati prima di quella risposta (due click, o
+  FormStart + deepPlus) partivano con lo stesso `event_id` e Meta scartava il secondo come
+  duplicato quando avevano lo stesso nome. Ora ogni evento ha il proprio id; Pixel e
+  server continuano a condividerlo per la deduplica.
+- **Doppi eventi da doppio click o doppio invio**: i doppioni involontari vengono fermati
+  prima dell'invio, quindi non arrivano né al server (n8n/CAPI) né al Pixel, senza
+  affidarsi alla deduplica di Meta sull'`event_id` (che copriva solo il caso in cui il
+  secondo evento partiva prima della risposta del primo, e mai n8n).
+  - *Lead inviato al submit* (form senza evento di successo): un doppio click su «Invia»
+    produceva due Lead, con `event_id` diversi se la prima risposta era già tornata. Ora
+    vale lo stesso limite dei Lead confermati: un solo Lead ogni 4 secondi.
+  - *ButtonClick*: un secondo click sullo stesso elemento entro 1 secondo viene ignorato;
+    click su elementi diversi, o sullo stesso dopo la finestra, restano eventi distinti.
+  - *PageView al Pixel*: quando il Pixel veniva caricato dal cambio di consenso o dal
+    segnale del CMP, il PageView partiva due volte (stesso `event_id`, quindi deduplicato
+    da Meta, ma inviato due volte). Ora parte una volta sola.
+  - Già protetti e invariati: Lead con conferma di successo (4 s), `generate_lead` GA4
+    (3 s per form), FormStart (una volta per form), deepInterest/deepPlus (una per pagina).
+- **`fst_get_uid()` (ripiego lato server)**: il cookie viene scritto con gli stessi
+  attributi usati dal browser (`path=/`, solo host) invece di `COOKIEPATH`/`COOKIE_DOMAIN`
+  — nelle installazioni in sottocartella o multisite potevano nascere due cookie `fst_uid`
+  con valori diversi; l'id generato è visibile al resto della richiesta (`$_COOKIE`); un
+  cookie vuoto non conta come id; se gli header sono già stati inviati non viene generato
+  un id usa-e-getta, che cambierebbe a ogni richiesta.
+- **Dopo la revoca del consenso l'`external_id` sopravviveva** nel cookie, nel form e in
+  memoria. Il cookie `fst_uid` veniva cancellato solo dalle passate del blocco cookie
+  (primo minuto, eventi del CMP): con un CMP che non emette eventi (iubenda) una revoca
+  successiva lo lasciava lì fino al reload, e gli eventi continuavano ad arrivare al server
+  con l'id. Ora lo script inline cancella `fst_uid` nel momento in cui rileva la revoca e
+  scarta l'id in memoria (`window._fstTempUid`): un nuovo consenso nella stessa pagina
+  genera un nuovo pseudonimo invece di ripristinare quello revocato. I campi hidden
+  compilati dal plugin vengono svuotati quando la sorgente sparisce (vale anche per `fbp`,
+  `fbc`, ...; i valori impostati dal sito non si toccano) e l'id in memoria non viene
+  inserito nei form senza consenso.
+
+### Modificato
+- **Campi hidden nei form: `external_id` inserito appena viene generato.** Il campo era già
+  riconosciuto (alias `externalid`, `fst_uid`), ma veniva letto solo nelle passate a
+  1,5 s / 4 s e al submit. Lo script inline emette `ati:external-id` quando l'id viene
+  creato o cambia — anche dopo le risposte del tracking server — e `form-fields.js`
+  ricompila subito i campi. Lo script dei campi continua a non generare nulla.
+- Widget di debug: la riga `fst_uid` spiega che il cookie nasce al caricamento se il
+  consenso c'è già.
+
+### Verifica
+- Chrome headless con gli script reali del plugin (guard, script inline, campi hidden) e
+  un server PHP che usa la vera `fst_get_uid()` e risponde in ritardo come quando attende
+  n8n. Visitatore con consenso e senza `fst_uid`, CMP che segnala il consenso e click
+  mentre il PageView è in viaggio: con la 0.14.1 il server riceve 2 `external_id`, il Pixel
+  2, e tre eventi condividono lo stesso `event_id`; ora un solo id su server, Pixel, cookie
+  e campo hidden (compilato da subito) e un `event_id` per evento. Doppio click su un
+  pulsante e su «Invia»: con la 0.14.1 il server riceve 2 ButtonClick e 2 Lead, ora 1 e 1.
+  Revoca senza eventi del CMP: con la 0.14.1 il cookie resta e l'evento successivo porta
+  ancora l'id; ora cookie e campo vengono svuotati e il nuovo consenso genera un id nuovo.
+- `tests/external-id-tests.js` (nuovo, 53): gli script inline reali, `form-fields.js` e
+  `cookie-guard.js` in un browser simulato con un server che replica `fst_get_uid()` e
+  risposte pilotate dal test. Invarianti: un solo `external_id` su server, Pixel, cookie e
+  campi hidden; un `event_id` per evento; nessun doppio evento da doppio click o doppio
+  invio. Sul codice 0.14.1 falliscono 27 controlli.
+- `tests/external-id-tests.php` (nuovo, 15): `fst_get_uid()`.
+- `tests/form-fields-tests.js` (+13): compilazione alla generazione, riallineamento al
+  cookie, nessun id inventato, svuotamento alla revoca.
+
+## [0.14.1] - 2026-10-09 — Consenso applicato subito, senza ricaricare la pagina
+
+### Corretto
+- **Dopo «Accetta» i cookie consentiti venivano bloccati fino al reload.** Il blocco cookie
+  teneva in memoria lo stato del consenso e lo ricalcolava solo durante le passate
+  periodiche (ogni 2s per il primo minuto) o sugli eventi dei CMP. iubenda non emette
+  eventi: scrive solo `_iub_cs-*`. Chi accettava dopo l'ultima passata restava «senza
+  consenso» per il guard, che bloccava proprio le scritture partite subito dopo
+  l'accettazione: `fst_uid` e anche **`_ga` scritto da GTM** (riprodotto in Chrome: 2
+  scritture bloccate). Ora il consenso si ricalcola appena `document.cookie` cambia; vale
+  anche per la revoca, che prima non bloccava le scritture successive fino alla passata.
+- **Consenso marketing non visto dopo «Accetta» se l'API iubenda restituiva ancora le
+  preferenze del caricamento**: `hasMarketingConsent()` dava la precedenza a
+  `_iub.cs.api.getPreferences()` e non guardava più il cookie. Ora decide il cookie
+  `_iub_cs-*` (la stessa fonte di server e blocco cookie); l'API è solo un ripiego quando
+  il cookie non c'è ancora.
+- **`fst_clid` scritto solo nei primi 4 secondi o su un evento custom**: lo script inline
+  emette ora `ati:marketing-consent` quando il consenso marketing cambia, e la
+  compilazione dei campi hidden persiste subito i click id in memoria.
+- Versione 0.14.1 anche per il cache-busting di `form-fields.js` (la versione dell'asset è
+  quella del plugin, e su staging girava già la 0.14.0).
+
+### Verifica
+- Chrome headless con gli script reali del plugin (guard + script inline + campi hidden),
+  visitatore da `?fbclid=…` che accetta senza ricaricare: API iubenda con dati vecchi, API
+  assente, «Accetta» dopo 65s → `fst_uid`, `fst_clid` e `_ga` presenti entro 2s, nessun
+  blocco. Con il codice precedente: `marketingConsent` falso (API vecchia) oppure `_ga` e
+  `fst_uid` bloccati.
+- Test: `tests/cookie-guard-tests.js` +4 (scrittura subito dopo «Accetta» senza API né
+  passate, revoca), `tests/form-fields-tests.js` +3 (persistenza su
+  `ati:marketing-consent`). Falliscono sul codice precedente.
+
 ## [0.14.0] - 2026-10-09 — Widget di debug: modalità pubblica e trascinamento
 
 ### Aggiunto

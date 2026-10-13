@@ -141,6 +141,67 @@ console.log('\n== Varianti di naming: Elementor, id, classe, data-attr, utm, ext
   ok(extId.value === 'uid-123-abc', 'external_id dal cookie fst_uid');
 }
 
+console.log('\n== external_id: inserito appena il plugin lo genera, mai inventato ==');
+{
+  // Nessun id generato (nessun consenso, o tracking non ancora partito): campo vuoto.
+  const empty = makeInput({ name: 'external_id' });
+  const none = run({ inputs: [empty], search: '', cookies: {}, consent: true });
+  none.timers.forEach(fn => fn());
+  ok(empty.value === '', 'external_id resta vuoto finché il plugin non lo genera');
+  ok(!none.cookies['fst_uid'], 'lo script dei campi non crea il cookie fst_uid');
+
+  // Generato dopo il load e dopo le passate differite: arriva con l'evento del plugin.
+  const late = makeInput({ name: 'external_id' });
+  const alias = makeInput({ name: 'form_fields[fst_uid]' });
+  const cookies = {};
+  const r = run({ inputs: [late, alias], search: '', cookies, consent: true });
+  r.timers.forEach(fn => fn());
+  ok(!!(r.listeners['ati:external-id'] || []).length, 'in ascolto di ati:external-id');
+  cookies.fst_uid = 'uid-late-1';
+  (r.listeners['ati:external-id'] || []).forEach(fn => fn({}));
+  ok(late.value === 'uid-late-1', 'external_id compilato alla generazione, senza submit');
+  ok(alias.value === 'uid-late-1', 'alias fst_uid compilato alla generazione');
+
+  // Il server riscrive fst_uid nella risposta: il campo segue il cookie.
+  cookies.fst_uid = 'uid-server-2';
+  (r.listeners['ati:external-id'] || []).forEach(fn => fn({}));
+  ok(late.value === 'uid-server-2', 'external_id riallineato al cookie scritto dal server');
+
+  // Id appena creato, cookie non ancora leggibile: vale quello in memoria, con consenso.
+  const mem = makeInput({ name: 'external_id' });
+  const withConsent = run({
+    inputs: [mem], search: '', cookies: {}, consent: true,
+    onWindow: w => { w._fstTempUid = 'uid-mem-3'; },
+  });
+  ok(mem.value === 'uid-mem-3', 'external_id dal valore in memoria con consenso');
+  ok(!withConsent.cookies['fst_uid'], 'nessuna scrittura di fst_uid dallo script dei campi');
+
+  // Stesso valore in memoria ma senza consenso (es. revoca): non entra nel form.
+  const revoked = makeInput({ name: 'external_id' });
+  run({
+    inputs: [revoked], search: '', cookies: {}, consent: false,
+    onWindow: w => { w._fstTempUid = 'uid-mem-4'; },
+  });
+  ok(revoked.value === '', 'valore in memoria ignorato senza consenso marketing');
+
+  // Sorgente sparita (revoca: cookie cancellato): il valore scritto da noi viene tolto,
+  // quello impostato dal sito no.
+  const gone = makeInput({ name: 'external_id' });
+  const site = makeInput({ name: 'externalid', value: 'ID-DEL-SITO' });
+  const jar = { fst_uid: 'uid-5' };
+  const g = run({ inputs: [gone, site], search: '', cookies: jar, consent: true });
+  ok(gone.value === 'uid-5', 'prima della revoca il campo ha l\'id');
+  delete jar.fst_uid;
+  g.windowStub.marketingConsent = false;
+  g.listeners.submit[0]({ target: { nodeName: 'FORM', querySelectorAll: () => [gone, site] } });
+  ok(gone.value === '', 'cookie cancellato: il campo compilato dal plugin viene svuotato');
+  ok(site.value === 'ID-DEL-SITO', 'il valore impostato dal sito non viene toccato');
+  jar.fst_uid = 'uid-6';
+  g.windowStub.marketingConsent = true;
+  g.listeners.submit[0]({ target: { nodeName: 'FORM', querySelectorAll: () => [gone, site] } });
+  ok(gone.value === 'uid-6', 'nuovo id dopo un nuovo consenso: il campo si ricompila');
+}
+
 console.log('\n== Campi non riconosciuti e valori esistenti ==');
 {
   const nonce = makeInput({ name: '_wpnonce', value: 'abc123' });
@@ -223,6 +284,26 @@ console.log('\n== Consenso dato dopo il load: lo storage viene idratato e persis
   ok(!!r.timers.length, 'passate differite registrate');
   r.timers.forEach(fn => fn());
   ok(!!r.cookies['fst_clid'], 'dopo il consenso il click id viene persistito');
+}
+
+console.log('\n== Consenso dato dopo le passate differite: fst_clid scritto sull\'evento del plugin ==');
+{
+  const gclid = makeInput({ name: 'gclid' });
+  const windowRef = {};
+  const r = run({
+    inputs: [gclid],
+    search: '?gclid=LATER',
+    consent: false,
+    onWindow: w => { windowRef.w = w; },
+  });
+  // Le passate a 1,5s e 4s girano PRIMA della scelta (visitatore che legge la pagina).
+  r.timers.forEach(fn => fn());
+  ok(!r.cookies['fst_clid'], 'passate differite senza consenso: nessun cookie');
+  // «Accetta» dopo: lo script inline aggiorna marketingConsent ed emette ati:marketing-consent.
+  windowRef.w.marketingConsent = true;
+  ok(!!(r.listeners['ati:marketing-consent'] || []).length, 'in ascolto di ati:marketing-consent');
+  (r.listeners['ati:marketing-consent'] || []).forEach(fn => fn({ detail: { granted: true } }));
+  ok(!!r.cookies['fst_clid'], 'dopo l\'evento del plugin il click id viene persistito senza reload');
 }
 
 console.log('\n== Refill in capture sul submit (cookie comparso dopo il consenso) ==');

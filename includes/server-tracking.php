@@ -554,7 +554,14 @@ add_action( 'template_redirect', 'fst_capture_fbclid_from_url' );
  * - Migliorare l'attribuzione Facebook
  * - Rispettare la privacy (nessun dato identificabile)
  * 
- * @return string Pseudonimo utente (es: "a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+ * L'id nasce di norma nel BROWSER (script inline di tag-inserter.php), che scrive il
+ * cookie prima di inviare qualsiasi richiesta: qui lo si legge soltanto. La generazione
+ * lato server resta come ripiego per le richieste arrivate con il consenso ma senza
+ * cookie. Due richieste parallele senza cookie riceverebbero due id diversi: per questo
+ * il browser deve arrivare già con il suo.
+ *
+ * @return string Pseudonimo utente (es: "a1b2c3d4-e5f6-7890-abcd-ef1234567890"),
+ *                stringa vuota se non c'è e non può essere creato.
  * @since 1.1
  */
 function fst_get_uid() {
@@ -562,7 +569,10 @@ function fst_get_uid() {
     
     // Se il cookie esiste già, restituisce il valore esistente
     if ( isset( $_COOKIE[ $cookie ] ) ) {
-        return sanitize_text_field( $_COOKIE[ $cookie ] );
+        $existing = sanitize_text_field( $_COOKIE[ $cookie ] );
+        if ( '' !== $existing ) {
+            return $existing;
+        }
     }
     
     // Senza consenso marketing non creiamo né persistiamo alcun identificatore (GDPR).
@@ -572,9 +582,20 @@ function fst_get_uid() {
         return '';
     }
 
-    // Genera nuovo UUID4 unico e lo salva nel cookie per 2 anni
+    // Un id che non può essere scritto nel cookie cambierebbe a ogni richiesta:
+    // meglio nessun external_id che uno diverso per ogni evento.
+    if ( headers_sent() ) {
+        return '';
+    }
+
+    // Genera nuovo UUID4 unico e lo salva nel cookie per 2 anni.
+    // Stessi attributi del cookie scritto dal browser (path=/, solo host, non httponly,
+    // come _fbc): con path o dominio diversi nascerebbero DUE cookie fst_uid con valori
+    // diversi (installazioni in sottocartella, multisite con COOKIE_DOMAIN).
     $uid = wp_generate_uuid4();
-    setcookie( $cookie, $uid, time() + 63072000, COOKIEPATH, COOKIE_DOMAIN );
+    setcookie( $cookie, $uid, time() + 63072000, '/', '', false, false );
+    // Le chiamate successive nella stessa richiesta devono vedere lo stesso id.
+    $_COOKIE[ $cookie ] = $uid;
     return $uid;
 }
 

@@ -12,7 +12,8 @@
  *   ufficiale `fb.1.<timestamp>.<fbclid>` (stessa logica di fst_build_user_data()).
  *   `fbp` NON viene mai costruito: deve essere il cookie `_fbp` reale del Pixel.
  * - Non sovrascrive valori già presenti nel campo (impostati dal sito o dall'utente),
- *   salvo quelli scritti da questo script (che vengono aggiornati se cambiano).
+ *   salvo quelli scritti da questo script (che vengono aggiornati se cambiano e
+ *   svuotati se la sorgente sparisce, ad esempio dopo la revoca del consenso).
  * - Riempie più volte: al load, sui form aggiunti dopo (AJAX/popup/multistep),
  *   al cambio di consenso e — soprattutto — in fase di capture del submit, quando
  *   i cookie `_fbp`/`_fbc` possono essere comparsi dopo l'accettazione del banner.
@@ -21,6 +22,9 @@
  *   `fst_clid` 90 giorni + sessionStorage) per restare disponibili nelle pagine
  *   successive; senza consenso restano solo in memoria, quindi i campi si compilano
  *   con quanto è nell'URL della pagina corrente (tipicamente la landing col form).
+ * - `external_id` è lo pseudonimo generato dal tracking del plugin (cookie `fst_uid`):
+ *   viene inserito solo quando esiste, cioè con consenso marketing, e appena viene
+ *   generato (evento `ati:external-id` emesso dallo script inline del plugin).
  * - Fallisce in modo controllato: nessun errore blocca l'invio del form.
  *
  * Config iniettata da PHP in window.atiFormFields:
@@ -229,8 +233,11 @@
       case 'gclid':
         return urlParam('gclid') || gclidFromGclAw(cookie('_gcl_aw')) || store.gclid || '';
       case 'external_id':
-        // Pseudonimo persistente del plugin (cookie scritto solo dopo il consenso).
-        return cookie('fst_uid') || window._fstTempUid || '';
+        // Pseudonimo del plugin: qui non viene MAI generato, si inserisce solo quello
+        // creato dal tracking (script inline o server), quindi solo con consenso.
+        // Fonte: cookie `fst_uid`; se appena creato e non ancora leggibile dal cookie,
+        // il valore in memoria, ignorato senza consenso (es. dopo una revoca).
+        return cookie('fst_uid') || (hasMarketingConsent() && window._fstTempUid) || '';
       default:
         return urlParam(key) || store[key] || '';
     }
@@ -290,11 +297,21 @@
     if (!key) return false;
 
     var value = resolve(key);
-    if (!value) return false;
-
     var current = input.value || '';
+    var ours = '1' === input.getAttribute('data-ati-filled');
+
+    if (!value) {
+      // Sorgente sparita (consenso revocato: cookie cancellato, id non più valido):
+      // il valore scritto da noi non deve restare nel form. Quelli del sito non si toccano.
+      if (ours && current) {
+        setValue(input, '');
+        log('campo svuotato:', key);
+      }
+      return false;
+    }
+
     // Valore già presente e non scritto da noi: è del sito, non si tocca.
-    if (current && '1' !== input.getAttribute('data-ati-filled')) return false;
+    if (current && !ours) return false;
     if (current === value) return false;
 
     setValue(input, value);
@@ -371,6 +388,13 @@
       if (form) fill(form);
     }, true);
 
+    // Consenso marketing cambiato senza reload (emesso dallo script inline del plugin):
+    // i click id in memoria diventano persistibili (fst_clid) e i campi si ricompilano.
+    document.addEventListener('ati:marketing-consent', function () {
+      syncStore();
+      fill(document);
+    }, false);
+
     // I cookie _fbp/_fbc compaiono solo dopo l'accettazione del banner: si ripassa.
     if (CFG.consentEvent) {
       document.addEventListener(CFG.consentEvent, function () {
@@ -378,6 +402,13 @@
         fill(document);
       }, false);
     }
+
+    // external_id appena generato dal plugin (script inline, oppure cookie `fst_uid`
+    // scritto dal server nella risposta di tracciamento): i campi si compilano subito.
+    document.addEventListener('ati:external-id', function () {
+      fill(document);
+    }, false);
+
     setTimeout(function () { syncStore(); fill(document); }, 1500);
     setTimeout(function () { syncStore(); fill(document); }, 4000);
 

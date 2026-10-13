@@ -224,7 +224,10 @@ function ati_render_general_tab() {
                         Riconosce anche i nomi con parentesi (es. Elementor <code>form_fields[fbclid]</code>), l'id <code>form-field-fbclid</code>,
                         la classe <code>ati-field-fbclid</code> e l'attributo <code>data-ati-field="fbclid"</code>.
                         I campi già valorizzati non vengono sovrascritti; se un valore non è disponibile il campo resta vuoto
-                        (<code>fbp</code> richiede il cookie <code>_fbp</code> del Pixel, quindi il consenso marketing).
+                        (<code>fbp</code> richiede il cookie <code>_fbp</code> del Pixel, quindi il consenso marketing).<br />
+                        <code>external_id</code> (anche <code>externalid</code> o <code>fst_uid</code>) riceve lo pseudonimo generato dal plugin,
+                        lo stesso inviato a Meta: viene inserito appena il plugin lo genera, quindi solo con consenso marketing,
+                        e tolto dal form se il consenso viene revocato.
                     </p>
                 </td>
             </tr>
