@@ -186,7 +186,7 @@ class ATI_Debug_Expectations {
 				'source'   => 'Plugin — pseudonimo (external_id)',
 				'category' => 'marketing',
 			),
-			self::plugin_cookie_state( $off, $marketing, true, 'Creato al primo evento tracciato dopo il consenso marketing.' )
+			self::plugin_cookie_state( $off, $marketing, true, 'Creato al caricamento della pagina se il consenso marketing c\'è già, altrimenti appena viene dato.' )
 		);
 
 		$rows[] = array_merge(

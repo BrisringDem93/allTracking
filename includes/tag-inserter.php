@@ -590,21 +590,35 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // FUNZIONI HELPER EVENT ID E EXTERNAL ID
   // ========================================
   // L'event_id serve a condividere lo STESSO identificativo tra la chiamata a
-  // Facebook Pixel e quella al server (deduplica Meta): vive quanto il singolo
-  // invio, quindi basta una variabile in memoria. In precedenza era il cookie
-  // `fst_ev_id`, scritto anche senza consenso: nessuno storage senza consenso.
-  let _fstEventId = null;
-
-  function getEventId() {
-    if (_fstEventId) return _fstEventId;
-    _fstEventId = 'evt_' + Date.now() + '_' + Math.random().toString(36).slice(2);
-    return _fstEventId;
-  }
-
-  function clearEventId() {
-    _fstEventId = null;
+  // Facebook Pixel e quella al server (deduplica Meta) per UN singolo evento.
+  // Ogni evento ne riceve uno nuovo: Pixel e server partono dalla stessa chiamata
+  // sincrona, quindi non serve conservarlo. Quando restava in memoria fino alla
+  // risposta del server, due eventi ravvicinati condividevano lo stesso id e Meta
+  // scartava il secondo come duplicato. Nessuno storage: né cookie né sessione.
+  // I doppioni involontari (doppio click, doppio invio) NON si affidano all'event_id:
+  // vengono fermati prima dell'invio, evento per evento (vedi ButtonClick e Lead).
+  function newEventId() {
+    return 'evt_' + Date.now() + '_' + Math.random().toString(36).slice(2);
   }
   
+  // Avvisa lo script dei campi hidden (assets/js/form-fields.js) che l'external_id è
+  // appena diventato disponibile o è cambiato: i campi `external_id` dei form vengono
+  // compilati subito, senza attendere il submit. Il valore non viaggia nell'evento e
+  // l'avviso parte una sola volta per valore. Copre sia l'id creato qui sia il cookie
+  // fst_uid scritto dal server nella risposta di tracciamento (fst_get_uid()).
+  let _fstAnnouncedUid = '';
+
+  function announceExternalId() {
+    let uid = '';
+    try {
+      const m = document.cookie.match(/(?:^|; )fst_uid=([^;]+)/);
+      uid = m ? decodeURIComponent(m[1]) : ((window.marketingConsent && window._fstTempUid) || '');
+    } catch (e) {}
+    if (!uid || uid === _fstAnnouncedUid) return;
+    _fstAnnouncedUid = uid;
+    try { document.dispatchEvent(new CustomEvent('ati:external-id')); } catch (e) {}
+  }
+
   // Genera o recupera external_id persistente (come lato server).
   // Il cookie fst_uid viene scritto SOLO dopo che l'utente ha espresso consenso marketing.
   // Prima del consenso viene mantenuto un UUID temporaneo in memoria (window._fstTempUid).
@@ -615,6 +629,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.log('[FST UID] ✅ Cookie fst_uid gia presente:', decodeURIComponent(match[1]));
 <?php endif; ?>
+      announceExternalId();
       return decodeURIComponent(match[1]);
     }
 
@@ -652,6 +667,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php endif; ?>
     }
 
+    announceExternalId();
     return window._fstTempUid;
   }
 
@@ -667,6 +683,16 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php endif; ?>
     return uid;
   };
+
+  // Consenso già presente al caricamento ma nessun cookie fst_uid (consenso dato prima
+  // che il plugin fosse installato, cookie scaduto o cancellato): l'id nasce QUI, prima
+  // di qualsiasi richiesta, così PageView ed eventi arrivano al server già con il
+  // cookie. Altrimenti il server ne genera uno per ogni richiesta arrivata senza cookie
+  // (PageView ed eventi in parallelo, finché la prima risposta non torna) e il browser
+  // un altro al primo segnale del CMP: più external_id per lo stesso visitatore.
+  if (window.marketingConsent) {
+    getExternalId();
+  }
   
   // ========================================
   // FUNZIONI HELPER PER FBCLID
@@ -717,7 +743,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   ];
 
   function sendEvent(payload) {
-    payload.eventID = getEventId();
+    payload.eventID = newEventId();
     
     // Aggiunge fbclid se disponibile
     const fbclid = getFbclid();
@@ -733,7 +759,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body: JSON.stringify(payload)
-    }).finally(clearEventId);
+    })
+      // Il server può aver appena creato fst_uid (Set-Cookie della risposta).
+      .finally(announceExternalId);
     
     // NUOVO: Se Facebook Pixel è attivo (consenso marketing + pixel inizializzato),
     // invia anche a Facebook con stesso eventID per deduplica
@@ -809,7 +837,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // ========================================
   // PAGEVIEW TRACKING
   // ========================================
-  const pageViewID = getEventId();
+  const pageViewID = newEventId();
   window.fstLastPageViewId = pageViewID; // Salva l'ID per uso futuro
   window.fstFbPageViewSent = false; // Flag per evitare invii multipli
   
@@ -860,7 +888,9 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
       console.error('[FST] ⚠️ Errore server PageView:', err);
 <?php endif; ?>
-    });
+    })
+    // Il server può aver appena creato fst_uid (Set-Cookie della risposta).
+    .finally(announceExternalId);
 
   // Invia PageView a Facebook Pixel se il consenso è dato e lo script è già caricato
   if (!isTagManagerEnabled && window.marketingConsent && window.fbq && !window.fstFbPageViewSent) {
@@ -874,11 +904,15 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     let attempts = 0;
     const maxAttempts = 5;
     const interval = setInterval(() => {
-      if (window.fbq) {
+      if (window.fstFbPageViewSent) {
+        // Già inviato dal caricamento dinamico del Pixel (cambio consenso / segnale del CMP).
+        clearInterval(interval);
+      } else if (window.fbq) {
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
         console.log('[FST] 📘 Facebook Pixel caricato, invio PageView');
 <?php endif; ?>
         fbq('track', 'PageView', {}, {eventID: pageViewID});
+        window.fstFbPageViewSent = true; // Segna come inviato
         // log dettagli se WP_DEBUG è true
         <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
         console.log('🎯 Page View Event ID:', pageViewID);
@@ -899,14 +933,27 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     console.warn('[FST] ⚠️ Facebook Pixel PageView non inviato - nessun consenso marketing');
 <?php endif; ?>
   }
-  
-  clearEventId();
 
   // ========================================
   // EVENT LISTENERS PER INTERAZIONI
   // ========================================
   
   /* BUTTON CLICK */
+  // Anti doppio click: un secondo click sullo STESSO elemento entro 1 secondo è quasi
+  // sempre involontario e non viene inviato (né al server né al Pixel). Click su
+  // elementi diversi, o sullo stesso dopo la finestra, restano eventi distinti.
+  const FST_CLICK_REPEAT_MS = 1000;
+  const _fstLastClickAt = (typeof WeakMap !== 'undefined') ? new WeakMap() : null;
+
+  function fstIsRepeatedClick(btn) {
+    if (!_fstLastClickAt) return false;
+    const now = new Date().getTime();
+    const prev = _fstLastClickAt.get(btn) || 0;
+    if (now - prev < FST_CLICK_REPEAT_MS) return true;
+    _fstLastClickAt.set(btn, now);
+    return false;
+  }
+
   document.addEventListener('click', e => {
     const btn = e.target.closest('button, a');
     if (!btn) return;
@@ -936,6 +983,13 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       return;
     }
     
+    if (fstIsRepeatedClick(btn)) {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.log('[FST] ButtonClick ignorato - doppio click sullo stesso elemento:', btn);
+<?php endif; ?>
+      return;
+    }
+
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] ButtonClick', btn);
 <?php endif; ?>
@@ -1029,6 +1083,7 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
   // Debounce anti doppio-invio, globale e non per-form: lo stesso invio può produrre più
   // segnali di successo (Fluent Forms emette l'evento 2 volte; formManageWP emette
   // myFormSuccess sul form mentre uno script custom può emetterne un altro su document).
+  // Vale anche per i Lead inviati direttamente al submit (doppio click su «Invia»).
   let _fstLastLeadAt = 0;
 
   // Unico punto di uscita del Lead Meta/n8n su conferma di successo.
@@ -1065,6 +1120,16 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
 <?php endif; ?>
       return;
     }
+    // Stesso anti doppio-invio dei Lead confermati (fstFlushLead): un doppio click su
+    // «Invia» genera due eventi submit ravvicinati, ma il Lead è uno solo.
+    const now = new Date().getTime();
+    if (now - _fstLastLeadAt < 4000) {
+<?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
+      console.log('[FST] Lead Meta/n8n gia inviato di recente: doppio submit ignorato', form);
+<?php endif; ?>
+      return;
+    }
+    _fstLastLeadAt = now;
 <?php if ( defined( 'WP_DEBUG' ) && WP_DEBUG ) : ?>
     console.log('[FST] FormSubmit (Meta/n8n) - form senza evento di successo, invio al submit', form);
 <?php endif; ?>
@@ -1476,6 +1541,17 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
       window.fstPersistUid && window.fstPersistUid();
       loadFacebookPixelDynamically();
     }else{
+      // Senza consenso lo pseudonimo non deve sopravvivere: né in memoria né nel cookie.
+      // Un nuovo consenso nella stessa pagina genera un nuovo id, come dopo un reload.
+      window._fstTempUid = null;
+      if(changed){
+        // Revoca osservata in pagina: il cookie viene cancellato qui, senza attendere il
+        // blocco cookie, che ripulisce solo durante le sue passate (primo minuto, eventi
+        // del CMP) o al caricamento successivo; fino ad allora fst_uid continuerebbe ad
+        // arrivare al server e nei campi hidden. Solo sul cambio di stato: lo stato
+        // iniziale lo decide il server con i cookie della richiesta.
+        document.cookie = 'fst_uid=; expires=Thu, 01 Jan 1970 00:00:00 GMT; max-age=0; path=/';
+      }
       removeFacebookPixel();
     }
 

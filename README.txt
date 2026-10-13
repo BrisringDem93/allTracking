@@ -2,7 +2,7 @@
 
 Un plugin WordPress che consente di installare rapidamente Facebook Pixel, Google Analytics 4 e Google Tag Manager senza toccare il codice.
 
-Versione: 0.14.1
+Versione: 0.14.2
 
 ## GA4 "server-side first" (conversioni confermate)
 
@@ -58,7 +58,7 @@ Da dove arrivano i valori:
 | `gclid` | parametro URL → coda del cookie `_gcl_aw` → click id memorizzato |
 | `fbc` | cookie `_fbc` → costruito come `fb.<sub>.<timestamp-ms>.<fbclid>` |
 | `fbp` | **solo** cookie `_fbp` del Pixel (mai generato) |
-| `external_id` | cookie `fst_uid` (pseudonimo del plugin) |
+| `external_id` (anche `externalid`, `fst_uid`) | cookie `fst_uid` (pseudonimo del plugin) → id appena creato e non ancora leggibile dal cookie (solo con consenso). Mai generato dallo script dei campi |
 | `utm_*`, altri click id | parametro URL → valore memorizzato |
 
 ### `fbc`: chi lo genera e come arriva al form
@@ -87,6 +87,9 @@ Regole di sicurezza:
   resta vuoto. L'unica costruzione ammessa è `fbc`, come descritto sopra.
 - I campi **già valorizzati** dal sito o dall'utente non vengono sovrascritti; i campi
   hidden non riconosciuti (`_wpnonce`, `redirect_to`, ...) non vengono toccati.
+- I valori scritti dal plugin vengono **svuotati se la sorgente sparisce**: dopo la
+  revoca del consenso (cookie cancellati) `external_id`, `fbp` e simili non restano nel
+  form.
 - **Nessuno storage senza consenso marketing.** Con il consenso i click id vengono
   memorizzati (cookie `fst_clid` 90 giorni + `sessionStorage`) e restano disponibili
   nelle pagine successive; senza consenso non viene né scritto né letto nulla, quindi
@@ -98,9 +101,46 @@ Regole di sicurezza:
   `_fbp`/`_fbc`, che compaiono solo dopo l'accettazione del banner, finiscono comunque
   nell'invio.
 
+### `external_id`: un solo id per visitatore
+
+`external_id` è lo pseudonimo `fst_uid`, lo stesso valore inviato a Meta (Pixel e
+Conversions API) e a n8n. Nasce **nel browser** ed esiste solo con il consenso marketing:
+
+- consenso già presente al caricamento e nessun cookie `fst_uid`: l'id viene creato dallo
+  script inline **prima di inviare qualsiasi richiesta**, così PageView ed eventi arrivano
+  al server già con il cookie;
+- consenso dato dopo il caricamento: l'id viene creato in quel momento;
+- il server (`fst_get_uid()`) legge il cookie; genera un id solo come ripiego, per una
+  richiesta arrivata con il consenso ma senza cookie, e lo scrive con gli stessi
+  attributi usati dal browser (`path=/`, solo host);
+- revoca: lo script inline cancella subito il cookie `fst_uid` (senza attendere le
+  passate del blocco cookie), scarta l'id in memoria e i campi hidden compilati dal
+  plugin vengono svuotati. Un nuovo consenso genera un nuovo id.
+
+I campi `external_id` vengono compilati appena l'id esiste (evento `ati:external-id`
+emesso dallo script inline), senza attendere il submit.
+Test: `node tests/external-id-tests.js` (script reali del plugin in un browser simulato,
+con server simulato) e `php tests/external-id-tests.php` (`fst_get_uid()`).
+
 La funzione è attiva di default e si disattiva da **Impostazioni → Tracking Integration
 → Generale → "Campi hidden nei form"**. Con `WP_DEBUG` attivo la console mostra quali
 campi vengono compilati. Test: `node tests/form-fields-tests.js`.
+
+### `event_id` e doppi invii
+
+Ogni evento ha il proprio `event_id`, condiviso solo tra la copia inviata al Pixel e
+quella inviata al server (è la chiave con cui Meta le riconosce come lo stesso evento).
+I doppioni involontari vengono fermati **prima dell'invio**, quindi non arrivano né a
+Meta né a n8n:
+
+| Evento | Regola |
+| --- | --- |
+| Lead (Meta/n8n) | un solo Lead ogni 4 secondi, sia al submit sia sulla conferma di successo |
+| `generate_lead` (GA4) | un invio ogni 3 secondi per form |
+| ButtonClick | un secondo click sullo stesso elemento entro 1 secondo viene ignorato |
+| FormStart | una volta per form |
+| deepInterest, deepPlus | una volta per pagina |
+| PageView | una volta per caricamento, anche se il Pixel viene caricato dopo |
 
 ## Blocco dei cookie senza consenso
 
@@ -328,8 +368,8 @@ confronta il risultato con lo stato precedente. Se rileva un cambiamento:
 
 - all'accettazione aggiorna `window.marketingConsent`, persiste `fst_uid` e
   prova a caricare Facebook Pixel tramite AJAX;
-- alla revoca aggiorna lo stato e disabilita le successive chiamate dirette a
-  Facebook Pixel.
+- alla revoca aggiorna lo stato, cancella il cookie `fst_uid`, scarta l'`external_id`
+  tenuto in memoria e disabilita le successive chiamate dirette a Facebook Pixel.
 
 In aggiunta al controllo periodico, il plugin reagisce ai segnali ufficiali dei
 CMP supportati e, per ciascuno, rilegge sempre i cookie per determinare sia
