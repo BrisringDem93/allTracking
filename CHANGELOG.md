@@ -2,6 +2,33 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/).
 
+## [0.14.1] - 2026-11-06 — Fix consenso iubenda (server e browser)
+
+### Corretto
+- **Consenso marketing iubenda mai rilevato lato server** (`ati_has_marketing_consent()`):
+  WordPress applica magic-quotes a `$_COOKIE`, quindi il JSON di `_iub_cs-*` arrivava con
+  le virgolette escapate e `json_decode()` falliva sempre. Effetti con consenso completo:
+  colonna «Server» del widget con marketing «assente», **Facebook Pixel mai caricato**
+  (i loader AJAX `ati_load_tracking_tags` / `ati_reload_facebook_pixel` rispondevano
+  «consenso marketing non presente») e cookie marketing trattati come non consentiti.
+  Ora il valore passa da `wp_unslash()` prima del parsing, come già facevano GA4
+  server-side e `ATI_Cookie_Consent` (problema segnalato nella nota della 0.8.2).
+- **Consenso iubenda letto dal cookie sbagliato nel browser**: iubenda scrive
+  `_iub_cs-<id>-uspr` (US privacy) già al caricamento, quindi in `document.cookie` viene
+  prima di `_iub_cs-<id>`. Tutti i lettori lato client prendevano il primo
+  `_iub_cs-*`, non trovavano `purposes` e segnavano ogni categoria come negata: il blocco
+  cookie bloccava `_ga`, `_gcl_au`, `fst_uid`, … anche dopo «Accetta tutto» e il widget
+  (anche con «Aggiorna») mostrava il consenso «assente». Ora viene usato il cookie che
+  contiene `purposes`/`consent` (`cookie-guard.js`, ripiego su cookie in
+  `tag-inserter.php` e `settings-page.php`). Osservato su staging3.elektarealestate.com
+  in navigazione ospite.
+- **Blocco cookie con consenso in cache**: lo stato veniva riletto solo durante le passate
+  periodiche (che terminano dopo `sweepDuration`) o su eventi che iubenda non emette,
+  quindi i tag avviati da GTM subito dopo il consenso venivano bloccati. Ora il consenso
+  viene riletto a ogni scrittura di cookie.
+- Test: cookie `-uspr` prima di quello del consenso e consenso dato dopo il caricamento
+  senza eventi (`tests/cookie-guard-tests.js`, +3).
+
 ## [0.14.0] - 2026-10-09 — Widget di debug: modalità pubblica e trascinamento
 
 ### Aggiunto
