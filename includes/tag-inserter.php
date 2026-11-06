@@ -50,9 +50,12 @@ function ati_has_marketing_consent() {
     // 3. iubenda: consenso globale oppure purpose 5 (Marketing).
     // Il nome del cookie può essere numerico (_iub_cs-12345) o con prefisso
     // (_iub_cs-s4597678): si accettano entrambi, come ATI_Cookie_Consent.
+    // WordPress applica magic-quotes a $_COOKIE: il JSON arriva con le virgolette
+    // escapate ({\"purposes\":...}) e senza wp_unslash() json_decode() fallisce sempre.
     foreach ( $_COOKIE as $name => $value ) {
         if ( preg_match( '/^_iub_cs-[\w-]+$/', $name ) ) {
-            $data = json_decode( urldecode( $value ), true );
+            $raw  = function_exists( 'wp_unslash' ) ? wp_unslash( (string) $value ) : stripslashes( (string) $value );
+            $data = json_decode( urldecode( $raw ), true );
             if ( is_array( $data ) && (
                 ( isset( $data['consent'] ) && true === $data['consent'] )
                 || ( isset( $data['purposes'][5] ) && true === $data['purposes'][5] )
