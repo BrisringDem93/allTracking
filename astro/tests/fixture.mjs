@@ -16,11 +16,12 @@ mkdirSync(join(fixture, 'src/pages/admin'), {recursive:true});
 const [packed] = JSON.parse(run(['pack','--ignore-scripts','--json','--pack-destination',fixture]));
 for(const path of ['dist/runtime.js','dist/early.inline.js','dist/settings-client.js','src/ConsentPanel.astro','src/TrackingSettings.astro','src/TrackingHead.astro'])assert.ok(packed.files.some(file=>file.path===path),`pack includes ${path}`);
 assert.ok(packed.files.every(file => file.path === 'package.json' || file.path === 'README.md' || file.path.startsWith('dist/') || ['src/ConsentPanel.astro','src/TrackingSettings.astro','src/TrackingHead.astro'].includes(file.path)));
-assert.equal(packed.version,'0.2.0');
+assert.equal(packed.version,'0.2.1');
 writeFileSync(join(fixture,'package.json'), JSON.stringify({name:'alltracking-fixture', private:true, type:'module', scripts:{build:'astro build'}, dependencies:{astro:'7.2.0','@alltracking/astro':`file:./${packed.filename}`}}));
 console.log(run(['install','--ignore-scripts','--no-audit','--no-fund','--offline'], fixture));
 const installed=join(fixture,'node_modules/@alltracking/astro');
 const manifest=JSON.parse(readFileSync(join(installed,'package.json'),'utf8'));
+assert.equal(manifest.version,packed.version,'consumer installed the current tarball');
 assert.equal(manifest.dependencies?.esbuild,undefined,'esbuild is build-time only');
 writeFileSync(join(fixture,'tracking-options.mjs'), `export const trackingOptions={exclude:['/admin'],guard:{mode:'enforce',sweepDuration:0},debug:{mode:'public',settingsPath:'/admin/tracking'}};`);
 writeFileSync(join(fixture,'astro.config.mjs'), `import {defineConfig} from 'astro/config'; import allTracking from '@alltracking/astro'; import {trackingOptions} from './tracking-options.mjs'; export default defineConfig({integrations:[allTracking(trackingOptions)], devToolbar:{enabled:false}});`);
@@ -32,12 +33,12 @@ import TrackingHead from '@alltracking/astro/TrackingHead.astro';
 import {trackingOptions} from '../../tracking-options.mjs';
 import {ClientRouter} from 'astro:transitions';
 ---
-<html lang="it"><head><TrackingHead options={trackingOptions} />${sentinel}<title>Independent project fixture</title><ClientRouter /></head><body><main><h1>Independent fixture</h1><form data-landing-form><input name="email" value="private@example.test" /></form><a href="/admin">Admin</a></main><ConsentPanel /></body></html>`;
+<html lang="it"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><TrackingHead options={trackingOptions} />${sentinel}<title>Independent project fixture</title><ClientRouter /></head><body><main><h1>Independent fixture</h1><form data-landing-form><input name="email" value="private@example.test" /></form><a href="/admin">Admin</a></main><ConsentPanel /></body></html>`;
 for (const name of ['index','second','admin/index']) writeFileSync(join(fixture,`src/pages/${name}.astro`), name.startsWith('admin/') ? page.replace('../../tracking-options.mjs','../../../tracking-options.mjs') : page);
 writeFileSync(join(fixture,'src/pages/admin/tracking.astro'), `---
 import TrackingSettings from '@alltracking/astro/TrackingSettings.astro';
 ---
-<html lang="it"><head><title>Settings fixture</title></head><body>${sentinel}<TrackingSettings initial={{tracking:{enabled:true,mode:'direct',ga4Id:'G-TEST123',secret:'PRIVATE_BACKEND_SECRET'},guard:{mode:'off',rules:[]},debug:{mode:'off'},token:'PRIVATE_BACKEND_SECRET'}} /></body></html>`);
+<html lang="it"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>Settings fixture</title></head><body>${sentinel}<TrackingSettings initial={{tracking:{enabled:true,mode:'direct',ga4Id:'G-TEST123',secret:'PRIVATE_BACKEND_SECRET'},guard:{mode:'off',rules:[]},debug:{mode:'off'},token:'PRIVATE_BACKEND_SECRET'}} /></body></html>`);
 writeFileSync(join(fixture,'consumer.ts'), `import allTracking, {type Options,type GuardOptions,type CookieRule} from '@alltracking/astro'; import {startAllTracking} from '@alltracking/astro/client'; import {normalizeConfig, sanitizeAttribution} from '@alltracking/astro/shared'; const rules: CookieRule[]=[]; const guard: GuardOptions={mode:'enforce',rules}; const options: Options = {exclude:['/admin'],guard,debug:{mode:'public',settingsPath:'/admin/tracking'}}; allTracking(options); startAllTracking(window, options); window.allTrackingGuard?.evaluate('_ga'); window.nativeTracking?.confirm({ok:true}, {analytics:false,marketing:false}); window.nativeConsent?.set({analytics:true}); sanitizeAttribution({},normalizeConfig({}).enabled ? {analytics:true,marketing:true} : {analytics:false,marketing:false});`);
 execFileSync(process.execPath, [join(root,'node_modules/typescript/lib/tsc.js'),'--ignoreConfig','--noEmit','--strict','--skipLibCheck','--module','NodeNext','--target','ES2022',join(fixture,'consumer.ts')], {cwd:fixture, encoding:'utf8', stdio:'pipe', timeout:60000});
 console.log(run(['run','build'], fixture));

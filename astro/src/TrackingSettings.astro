@@ -62,7 +62,7 @@ const config=validateSettings(Astro.props.initial ?? {});
   fieldset { border: 1px solid #718095; border-radius: .3rem; margin-block: 1.2rem; padding: 1rem; min-inline-size: 0; }
   legend { font-weight: 700; padding-inline: .4rem; }
   .tracking-settings :global(label) { display: block; margin-block: .65rem; }
-  .tracking-settings :global(input), .tracking-settings :global(select), .tracking-settings :global(textarea), .tracking-settings :global(button) { font: inherit; color: inherit; background: #243142; border: 1px solid #91a0b4; border-radius: .2rem; padding: .4rem .6rem; max-inline-size: 100%; }
+  .tracking-settings :global(input), .tracking-settings :global(select), .tracking-settings :global(textarea), .tracking-settings :global(button) { font: inherit; color: inherit; background: #243142; border: 1px solid #91a0b4; border-radius: .2rem; padding: .4rem .6rem; max-inline-size: 100%; box-sizing: border-box; }
   .tracking-settings :global(input:not([type=checkbox])), .tracking-settings :global(select), .tracking-settings :global(textarea) { display: block; inline-size: min(100%,34rem); }
   .tracking-settings :global(input[type=checkbox]) { inline-size: 1.15rem; block-size: 1.15rem; vertical-align: middle; }
   input:disabled { opacity: .65; }

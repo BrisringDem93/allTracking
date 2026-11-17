@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {existsSync,readFileSync} from 'node:fs';
-import {dirname} from 'node:path';
+import {dirname,resolve} from 'node:path';
 import {build} from 'esbuild';
 import {transform} from '@astrojs/compiler-rs';
 import {experimental_AstroContainer as AstroContainer} from 'astro/container';
@@ -23,6 +23,19 @@ async function setup(t,initial) {
   const api=client.mountSettings(dom.window);
   return {w:dom.window,d:dom.window.document,api,...client};
 }
+
+test('compiled settings CSS includes padding and borders in control widths',async t=>{
+  const {d,w,api}=await setup(t,{guard:{rules:[]}});
+  const filename=resolve('src/TrackingSettings.astro');
+  const style=d.createElement('style');
+  style.textContent=transform(readFileSync(filename,'utf8'),{filename}).css.join('\n');
+  d.head.append(style);
+  d.querySelector('[data-add-rule]').click();
+  const controls=d.querySelectorAll('.tracking-settings input,.tracking-settings select,.tracking-settings textarea,.tracking-settings button');
+  assert.ok(controls.length>0);
+  for(const control of controls)assert.ok([...style.sheet.cssRules].some(rule=>control.matches(rule.selectorText)&&rule.style.getPropertyValue('box-sizing')==='border-box'),control.name||control.textContent);
+  api.destroy();
+});
 
 test('real Astro editor renders safe OFF controls and exports validated public configuration only',async t=>{
   const {d,w,api}=await setup(t,{tracking:{mode:'direct',enabled:true,ga4Id:'G-TEST123',token:'SECRET'},guard:{mode:'off',rules:[]},debug:{mode:'off'},webhook:'https://SECRET.test'});

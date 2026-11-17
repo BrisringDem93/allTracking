@@ -1,6 +1,6 @@
 {
   "name": "@alltracking/astro",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Consent-first allTracking integration for Astro",
   "type": "module",
   "license": "UNLICENSED",

@@ -19,7 +19,7 @@ npm pack --ignore-scripts
 Nel **progetto Astro destinatario**, installare il tarball prodotto:
 
 ```sh
-npm install /percorso/allTracking/astro/alltracking-astro-0.2.0.tgz
+npm install /percorso/allTracking/astro/alltracking-astro-0.2.1.tgz
 ```
 
 Richiede Astro `^7.2.0`; la fixture verifica **Astro 7.2.0**, Node 22.22.1 e npm 10.9.4. Il pacchetto dichiara Node >=22.18.0: rispettare anche i requisiti della versione Astro scelta (versioni più recenti possono richiedere Node più recente). Non installare la radice Git come dipendenza npm: quella contiene WordPress.
