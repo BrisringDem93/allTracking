@@ -1,0 +1,78 @@
+---
+import {validateSettings} from '../dist/settings-client.js';
+interface Props { initial?: unknown; }
+const config=validateSettings(Astro.props.initial ?? {});
+---
+<section class="tracking-settings" data-tracking-settings data-config={JSON.stringify(config)} aria-label="Impostazioni pubbliche tracking">
+  <h1>Impostazioni tracking</h1>
+  <p>Editor locale di configurazione pubblica, senza segreti. I file esportati non sono salvati remotamente e non modificano il sito in esecuzione. Il CMS host deve validare e applicare il JSON; proteggere questa pagina se la configurazione è interna.</p>
+  <form>
+    <fieldset><legend>Generale</legend>
+      <label><input type="checkbox" name="tracking.enabled" /> Tracking abilitato</label>
+      <label>Modalità <select name="tracking.mode"><option value="off">Disattivato</option><option value="gtm">GTM</option><option value="direct">Diretto GA4 / Meta</option></select></label>
+      <label>ID GTM <input name="tracking.gtmId" type="text" placeholder="GTM-XXXX" /></label>
+      <label>ID GA4 <input name="tracking.ga4Id" type="text" placeholder="G-XXXX" /></label>
+      <label>ID Meta Pixel <input name="tracking.metaPixelId" type="text" inputmode="numeric" /></label>
+      <label><input type="checkbox" name="tracking.attribution" /> Attribuzione in memoria (senza fst_uid / fst_clid)</label>
+      <label><input type="checkbox" name="tracking.formEvents" /> Eventi moduli confermati dal backend</label>
+      <label>CMP <select name="tracking.cmp"><option value="bridge">Bridge / banner nativo</option><option value="cookiebot">Cookiebot</option><option value="iubenda">iubenda</option></select></label>
+      <p>GTM e tag diretti hanno proprietà esclusiva: il file esportato mantiene solo gli ID della modalità selezionata.</p>
+    </fieldset>
+    <fieldset><legend>Server — solo informazione</legend>
+      <p>Flag configurati, non prove di disponibilità o consegna. Backend, snapshot server, queue/cron e pipeline non sono inclusi. Credenziali e URL webhook restano nel backend host.</p>
+      <label><input type="checkbox" name="tracking.serverN8n" disabled /> N8n configurato</label>
+      <label><input type="checkbox" name="tracking.serverMeta" disabled /> Meta server configurato</label>
+      <label><input type="checkbox" name="tracking.serverGA4" disabled /> GA4 server configurato</label>
+    </fieldset>
+    <fieldset><legend>Blocco cookie</legend>
+      <label>Modalità guard <select name="guard.mode"><option value="off">Off — predefinito</option><option value="monitor">Monitor — osserva soltanto</option><option value="enforce">Enforce — blocca / cancella secondo regole</option></select></label>
+      <label>Intervallo passate (ms) <input type="number" name="guard.sweepInterval" min="250" max="2147483647" step="1" /></label>
+      <label>Durata passate (ms; 0 disabilita timer) <input type="number" name="guard.sweepDuration" min="0" max="2147483647" step="1" /></label>
+      <label>Allowlist personalizzata — un pattern per riga <textarea name="guard.allowlist" rows="4"></textarea></label>
+      <p>Le regole sono ordinate: vince la prima che nega il consenso. I pattern confrontano nomi o domini, mai valori di cookie. I cookie CMP/sessione protetti non vengono cancellati. Preferences non è supportata dal banner nativo e rimane negata senza un host verificato.</p>
+      <ol data-rules></ol>
+      <div class="actions">
+        <button type="button" data-add-rule>Aggiungi regola</button><button type="button" data-enable-rules>Abilita tutte</button><button type="button" data-disable-rules>Disabilita tutte</button><button type="button" data-default-rules>Ripristina preset</button><button type="button" data-clear-rules>Svuota regole</button>
+      </div>
+    </fieldset>
+    <fieldset><legend>Prova regole — simulazione, nessun cookie scritto</legend>
+      <label>Nome cookie <input name="test.name" type="text" placeholder="_ga" /></label>
+      <label>Dominio dichiarato <input name="test.domain" type="text" placeholder="example.test" /></label>
+      <label><input name="test.analytics" type="checkbox" /> Simula consenso analytics</label><label><input name="test.marketing" type="checkbox" /> Simula consenso marketing</label>
+      <button type="button" data-test-rule>Prova regole</button><pre data-test-result aria-live="polite"></pre>
+    </fieldset>
+    <fieldset><legend>Diagnostica</legend>
+      <label>Visibilità <select name="debug.mode"><option value="off">Off — predefinito</option><option value="public">Pubblica — SOLO STAGING / TEST</option></select></label>
+      <label>Percorso impostazioni (stesso sito, senza query) <input name="debug.settingsPath" type="text" placeholder="/tracking-settings" /></label>
+      <p>La modalità pubblica è visibile a tutti: nessuna autorizzazione amministrativa viene simulata nel browser.</p>
+    </fieldset>
+    <p role="status" aria-live="polite"></p>
+    <button type="submit">Esporta JSON (non attiva sul sito)</button>
+  </form>
+  <noscript>JavaScript richiesto per modificare e scaricare la configurazione. Nessuna impostazione è applicata da questa pagina.</noscript>
+</section>
+<script>
+  import {mountSettings} from '../dist/settings-client.js';
+  mountSettings(window);
+  document.addEventListener('astro:page-load',()=>mountSettings(window));
+</script>
+<style>
+  /* ponytail: self-contained native form; host owns authorization and durable persistence. */
+  .tracking-settings { color: #edf2f8; background: #141b24; padding: clamp(1rem,3vw,2rem); border: 1px solid #748398; border-radius: .5rem; font: 1rem/1.5 system-ui,sans-serif; max-inline-size: 76rem; margin-inline: auto; }
+  fieldset { border: 1px solid #718095; border-radius: .3rem; margin-block: 1.2rem; padding: 1rem; min-inline-size: 0; }
+  legend { font-weight: 700; padding-inline: .4rem; }
+  .tracking-settings :global(label) { display: block; margin-block: .65rem; }
+  .tracking-settings :global(input), .tracking-settings :global(select), .tracking-settings :global(textarea), .tracking-settings :global(button) { font: inherit; color: inherit; background: #243142; border: 1px solid #91a0b4; border-radius: .2rem; padding: .4rem .6rem; max-inline-size: 100%; }
+  .tracking-settings :global(input:not([type=checkbox])), .tracking-settings :global(select), .tracking-settings :global(textarea) { display: block; inline-size: min(100%,34rem); }
+  .tracking-settings :global(input[type=checkbox]) { inline-size: 1.15rem; block-size: 1.15rem; vertical-align: middle; }
+  input:disabled { opacity: .65; }
+  .tracking-settings :global(button) { cursor: pointer; min-block-size: 44px; }
+  .actions { display:flex; flex-wrap:wrap; gap:.5rem; }
+  ol { padding-inline-start: 1.5rem; }
+  .tracking-settings :global([data-rule]) { border-block-start: 1px solid #718095; padding-block: 1rem; }
+  .tracking-settings :global([data-rule] label) { display: inline-block; margin-inline-end: .7rem; max-inline-size: 100%; }
+  .tracking-settings :global([data-rule] input:not([type=checkbox])), .tracking-settings :global([data-rule] select) { inline-size: 14rem; }
+  .tracking-settings :global(:is(button,input,select,textarea):focus-visible) { outline: 3px solid #88caff; outline-offset: 3px; }
+  pre { overflow-wrap: anywhere; white-space: pre-wrap; }
+  [role=status]:not(:empty) { padding: .75rem; border-inline-start: .3rem solid #ffdb8b; }
+</style>

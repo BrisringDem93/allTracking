@@ -1,0 +1,32 @@
+{
+  "name": "@alltracking/astro",
+  "version": "0.2.0",
+  "description": "Consent-first allTracking integration for Astro",
+  "type": "module",
+  "license": "UNLICENSED",
+  "files": ["dist", "src/ConsentPanel.astro", "src/TrackingSettings.astro", "src/TrackingHead.astro", "README.md"],
+  "exports": {
+    ".": {"types": "./dist/index.d.ts", "default": "./dist/index.js"},
+    "./client": {"types": "./dist/runtime.d.ts", "default": "./dist/runtime.js"},
+    "./shared": {"types": "./dist/tracking.d.ts", "default": "./dist/tracking.js"},
+    "./ConsentPanel.astro": "./src/ConsentPanel.astro",
+    "./TrackingSettings.astro": "./src/TrackingSettings.astro",
+    "./TrackingHead.astro": "./src/TrackingHead.astro"
+  },
+  "engines": {"node": ">=22.18.0"},
+  "peerDependencies": {"astro": "^7.2.0"},
+  "scripts": {
+    "build": "tsc -p tsconfig.json && esbuild src/early-entry.ts --bundle --format=iife --platform=browser --target=es2022 --outfile=dist/early.inline.js",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test tests/*.test.mjs",
+    "test:fixture": "node tests/fixture.mjs",
+    "verify": "npm run build && npm test && npm run check && npm run test:fixture"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "astro": "7.2.0",
+    "esbuild": "0.28.2",
+    "jsdom": "29.1.1",
+    "typescript": "6.0.3"
+  }
+}

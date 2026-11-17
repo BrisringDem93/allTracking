@@ -1,0 +1,93 @@
+<div class="consent" data-consent-ui>
+  <section class="consent__banner" data-consent-banner role="region" aria-labelledby="consent-banner-title" hidden>
+    <p class="eyebrow">Cookie</p>
+    <h2 id="consent-banner-title" class="consent__title">La scelta è tua</h2>
+    <p class="consent__text">I tag opzionali di misurazione e marketing si attivano solo dopo il tuo consenso confermato. Rifiutare non limita la navigazione o l’invio dei moduli.</p>
+    <p class="consent__note" data-consent-reason id="consent-banner-reason" hidden></p>
+    <div class="consent__actions consent__actions--banner">
+      <button type="button" class="consent__button" data-consent-accept aria-describedby="consent-banner-reason">Accetta</button>
+      <button type="button" class="consent__button" data-consent-reject>Rifiuta</button>
+      <button type="button" class="consent__button" data-consent-customize aria-haspopup="dialog" aria-controls="consent-preferences">Personalizza</button>
+    </div>
+    <p class="consent__links"><slot name="links"><a href="/privacy-policy">Privacy policy</a><a href="/cookie-policy">Cookie policy</a></slot></p>
+  </section>
+
+  <button type="button" class="consent__reopen" data-consent-reopen aria-haspopup="dialog" aria-controls="consent-preferences" hidden>
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+      <path d="M12 3a9 9 0 1 0 9 9 4 4 0 0 1-4-4 4 4 0 0 1-5-5Z" stroke-linejoin="round"></path>
+      <circle cx="8.5" cy="10.5" r="1" fill="currentColor" stroke="none"></circle>
+      <circle cx="10.5" cy="16" r="1" fill="currentColor" stroke="none"></circle>
+      <circle cx="15.5" cy="15" r="1" fill="currentColor" stroke="none"></circle>
+    </svg>
+    <span class="consent__reopen-label">Preferenze cookie</span>
+  </button>
+
+  <dialog id="consent-preferences" class="consent__dialog" aria-labelledby="consent-preferences-title" aria-describedby="consent-preferences-description">
+    <div class="consent__head">
+      <div>
+        <p class="eyebrow">Privacy</p>
+        <h2 id="consent-preferences-title" class="consent__title" tabindex="-1" autofocus>Preferenze cookie</h2>
+      </div>
+      <button type="button" class="consent__close" data-consent-close aria-label="Chiudi senza modificare">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"></path></svg>
+      </button>
+    </div>
+    <p id="consent-preferences-description" class="consent__text">Puoi modificare o revocare la scelta in qualsiasi momento. Chiudere questa finestra non modifica il consenso.</p>
+    <p class="consent__note" data-consent-reason id="consent-dialog-reason" hidden></p>
+    <form class="consent__form" data-consent-form>
+      <fieldset class="consent__categories" aria-describedby="consent-dialog-reason">
+        <legend class="consent__legend">Categorie</legend>
+        <label class="consent__category">
+          <span>
+            <span class="consent__category-name">Necessari</span>
+            <span class="consent__category-desc">Sempre attivi per il funzionamento del sito e la scelta del consenso.</span>
+          </span>
+          <input type="checkbox" role="switch" class="consent__switch" name="necessary" checked disabled />
+        </label>
+        <label class="consent__category">
+          <span>
+            <span class="consent__category-name">Analytics</span>
+            <span class="consent__category-desc">Misurazione delle visite.</span>
+          </span>
+          <input type="checkbox" role="switch" class="consent__switch" name="analytics" />
+        </label>
+        <label class="consent__category">
+          <span>
+            <span class="consent__category-name">Marketing</span>
+            <span class="consent__category-desc">Misurazione delle conversioni pubblicitarie.</span>
+          </span>
+          <input type="checkbox" role="switch" class="consent__switch" name="marketing" />
+        </label>
+      </fieldset>
+      <p class="consent__audit" data-consent-audit role="status" aria-live="polite"></p>
+      <div class="consent__actions">
+        <button type="button" class="consent__button" data-consent-reject>Rifiuta</button>
+        <button type="submit" class="consent__button consent__button--primary">Salva preferenze</button>
+      </div>
+    </form>
+    <p class="consent__links"><slot name="links"><a href="/privacy-policy">Privacy policy</a><a href="/cookie-policy">Cookie policy</a></slot></p>
+  </dialog>
+</div>
+
+<style>
+  /* ponytail: native dialog and independent defaults, not the source site's theme. */
+  .consent { color: #161616; font: 1rem/1.5 system-ui, sans-serif; }
+  .consent [hidden] { display: none !important; }
+  .consent__banner, .consent__dialog { background: #fff; color: #161616; border: 1px solid #666; border-radius: .5rem; padding: 1rem; box-shadow: 0 .5rem 2rem #0003; }
+  .consent__banner { position: fixed; z-index: 1000; inset: auto 1rem 1rem; max-inline-size: 36rem; max-block-size: 80dvh; overflow: auto; }
+  .consent__dialog { inline-size: min(36rem, calc(100% - 2rem)); max-block-size: 85dvh; overflow: auto; box-sizing: border-box; }
+  .consent__dialog::backdrop { background: #0008; }
+  .consent__head, .consent__actions, .consent__links, .consent__category { display: flex; gap: .75rem; align-items: center; flex-wrap: wrap; }
+  .consent__head, .consent__category { justify-content: space-between; }
+  .consent__category { padding-block: .75rem; }
+  .consent__category-name, .consent__category-desc { display: block; }
+  .consent__categories { border: 0; padding: 0; }
+  .consent__button, .consent__close, .consent__reopen { min-block-size: 44px; padding: .5rem .75rem; border: 1px solid #666; background: #fff; color: #161616; border-radius: .25rem; font: inherit; cursor: pointer; }
+  .consent__reopen { position: fixed; z-index: 999; bottom: 1rem; left: 1rem; display: flex; gap: .5rem; align-items: center; }
+  .consent__banner:not([hidden]) ~ .consent__reopen { visibility: hidden; }
+  .consent__switch { inline-size: 1.5rem; block-size: 1.5rem; }
+  .consent__button:disabled, .consent__switch:disabled { opacity: .6; cursor: not-allowed; }
+  .consent__audit:not(:empty), .consent__note:not([hidden]) { border-inline-start: .25rem solid #972929; padding: .5rem; }
+  :is(button, a, input):focus-visible { outline: 3px solid #165dd0; outline-offset: 3px; }
+  a { color: #1249a5; }
+</style>
