@@ -50,9 +50,12 @@ function ati_has_marketing_consent() {
     // 3. iubenda: consenso globale oppure purpose 5 (Marketing).
     // Il nome del cookie può essere numerico (_iub_cs-12345) o con prefisso
     // (_iub_cs-s4597678): si accettano entrambi, come ATI_Cookie_Consent.
+    // WordPress applica magic-quotes a $_COOKIE: il JSON arriva con le virgolette
+    // escapate ({\"purposes\":...}) e senza wp_unslash() json_decode() fallisce sempre.
     foreach ( $_COOKIE as $name => $value ) {
         if ( preg_match( '/^_iub_cs-[\w-]+$/', $name ) ) {
-            $data = json_decode( urldecode( $value ), true );
+            $raw  = function_exists( 'wp_unslash' ) ? wp_unslash( (string) $value ) : stripslashes( (string) $value );
+            $data = json_decode( urldecode( $raw ), true );
             if ( is_array( $data ) && (
                 ( isset( $data['consent'] ) && true === $data['consent'] )
                 || ( isset( $data['purposes'][5] ) && true === $data['purposes'][5] )
@@ -568,9 +571,12 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     var cm = document.cookie.match(/(?:^|; )cmplz_marketing=([^;]+)/);
     if (cm && decodeURIComponent(cm[1]) === 'allow') return true;
 
-    // 3. iubenda: consenso globale oppure purpose 5 (Marketing)
-    var iub = document.cookie.match(/(?:^|; )_iub_cs-[\w-]+=([^;]+)/);
-    if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && (d.consent === true || (d.purposes && d.purposes[5] === true))) return true; } catch(e) {} }
+    // 3. iubenda: consenso globale oppure purpose 5 (Marketing).
+    // Si controllano TUTTI i cookie _iub_cs-*: _iub_cs-<id>-uspr non contiene il consenso.
+    var iubRe = /(?:^|; )_iub_cs-[\w-]+=([^;]+)/g, iub;
+    while ((iub = iubRe.exec(document.cookie)) !== null) {
+      try { var d = JSON.parse(decodeURIComponent(iub[1])); if (d && (d.consent === true || (d.purposes && d.purposes[5] === true))) return true; } catch(e) {}
+    }
 
     // 4. Cookiebot: CookieConsent con marketing:true
     var cb = document.cookie.match(/(?:^|; )CookieConsent=([^;]+)/);
@@ -1287,6 +1293,20 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     return null;
   }
 
+  // iubenda scrive più cookie _iub_cs-*: accanto a quello del consenso c'è
+  // _iub_cs-<id>-uspr (US privacy), scritto già al caricamento e quindi spesso
+  // PRIMA in document.cookie. Restituisce il primo che contiene purposes/consent.
+  function readIubendaCookie(){
+    var re = /(?:^|; )_iub_cs-[\w-]+=([^;]+)/g, m;
+    while ((m = re.exec(document.cookie)) !== null) {
+      try {
+        var d = JSON.parse(decodeURIComponent(m[1]));
+        if (d && typeof d === 'object' && (d.purposes || typeof d.consent === 'boolean')) return d;
+      } catch(e) {}
+    }
+    return null;
+  }
+
   function iubendaMarketingConsent(preferences){
     if (!preferences || typeof preferences !== 'object') return null;
     const purposes = preferences.purposes && typeof preferences.purposes === 'object'
@@ -1353,8 +1373,8 @@ window.fstAjaxUrl = '<?php echo esc_js( admin_url('admin-ajax.php') ); ?>';
     // 3. iubenda: consenso globale oppure purpose 5 (Marketing)
     var iubendaApiConsent = iubendaMarketingConsent(readIubendaPreferences());
     if (iubendaApiConsent !== null) return iubendaApiConsent;
-    var iub = document.cookie.match(/(?:^|; )_iub_cs-[\w-]+=([^;]+)/);
-    if (iub) { try { var d = JSON.parse(decodeURIComponent(iub[1])); var iubCookieConsent = iubendaMarketingConsent(d); if (iubCookieConsent !== null) return iubCookieConsent; } catch(e) {} }
+    var iubCookieConsent = iubendaMarketingConsent(readIubendaCookie());
+    if (iubCookieConsent !== null) return iubCookieConsent;
 
     // 4. Cookiebot: CookieConsent con marketing:true
     if (window.Cookiebot && window.Cookiebot.consent && window.Cookiebot.consent.marketing === true) return true;

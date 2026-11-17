@@ -399,6 +399,29 @@ section('Rilevamento del consenso dai CMP');
   });
   ok(env.api.consent().analytics === true, 'purpose iubenda analytics configurabile (7)');
 }
+{
+  // iubenda scrive _iub_cs-<id>-uspr già al caricamento: in document.cookie viene
+  // PRIMA del cookie di consenso. Il consenso va letto dal cookie con i purposes.
+  const env = makeEnv({
+    config: { mode: 'off' },
+    cookies: {
+      '_iub_cs-s4602417-uspr': '%7B%22s%22%3Atrue%2C%22sh%22%3Afalse%7D',
+      '_iub_cs-s4602417': '%7B%22purposes%22%3A%7B%221%22%3Atrue%2C%223%22%3Atrue%2C%224%22%3Atrue%2C%225%22%3Atrue%7D%7D',
+    },
+  });
+  const c = env.api.consent();
+  ok(c.analytics && c.marketing && c.preferences, 'iubenda con cookie -uspr prima di quello del consenso: consenso letto');
+}
+{
+  // Consenso dato DOPO il caricamento, senza eventi DOM (iubenda) e senza passate
+  // periodiche (sweepDuration=0): la scrittura successiva deve già passare.
+  const env = makeEnv({ config: { rules: [rule({ category: 'analytics', match: 'wildcard', value: '_ga*' })] } });
+  env.write('_ga=bloccato');
+  ok(!env.has('_ga'), 'iubenda: prima del consenso il cookie analytics è bloccato');
+  env.write('_iub_cs-s4602417=' + encodeURIComponent('{"purposes":{"4":true}}') + '; path=/');
+  env.write('_ga=GA1.1.1.1');
+  ok(env.store._ga === 'GA1.1.1.1', 'iubenda: dopo il consenso la scrittura passa senza ricaricare né eventi');
+}
 
 // -------------------------------------------------------------------------
 section('Operatori di match (parità con la controparte PHP)');

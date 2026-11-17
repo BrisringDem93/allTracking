@@ -224,19 +224,37 @@
     return CMP === 'auto' || CMP === candidate;
   }
 
-  /** Payload di consenso iubenda (il nome del cookie contiene un id variabile). */
-  function iubendaData() {
-    var m = rawCookies().match(/(?:^|;\s*)_iub_cs-[\w-]+=([^;]*)/);
-    if (!m) return null;
+  function parseJsonCookie(raw) {
     try {
-      return JSON.parse(decodeURIComponent(m[1]));
+      return JSON.parse(decodeURIComponent(raw));
     } catch (e) {
       try {
-        return JSON.parse(m[1]);
+        return JSON.parse(raw);
       } catch (e2) {
         return null;
       }
     }
+  }
+
+  /**
+   * Payload di consenso iubenda (il nome del cookie contiene un id variabile).
+   *
+   * iubenda scrive più cookie `_iub_cs-*`: accanto a quello del consenso
+   * (`_iub_cs-s4602417`) c'è `_iub_cs-s4602417-uspr` (US privacy), scritto già al
+   * caricamento e quindi spesso PRIMA in document.cookie. Va scelto il cookie che
+   * contiene davvero `purposes`/`consent`, non il primo trovato.
+   */
+  function iubendaData() {
+    var re = /(?:^|;\s*)_iub_cs-[\w-]+=([^;]*)/g;
+    var raw = rawCookies();
+    var m;
+    while ((m = re.exec(raw)) !== null) {
+      var data = parseJsonCookie(m[1]);
+      if (data && typeof data === 'object' && (data.purposes || typeof data.consent === 'boolean')) {
+        return data;
+      }
+    }
+    return null;
   }
 
   function iubendaPurpose(data, index) {
@@ -318,8 +336,15 @@
     return _consent;
   }
 
+  /**
+   * Consenso al momento della scrittura. Viene riletto ogni volta: iubenda non
+   * emette eventi DOM all'accettazione e le passate periodiche finiscono dopo
+   * sweepDuration, quindi uno stato in cache bloccherebbe i tag che GTM fa partire
+   * subito dopo il consenso (_ga, _gcl_au, …) fino al ricaricamento della pagina.
+   * Le scritture di cookie sono poche: rileggere la stringa dei cookie costa poco.
+   */
   function currentConsent() {
-    return _consent || refreshConsent();
+    return refreshConsent();
   }
 
   // =========================================================================
