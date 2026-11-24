@@ -27,10 +27,16 @@ export function startAllTracking(w: Window, options: Options = {}): Promise<void
   };
   // ponytail: loaded provider code cannot be unloaded safely. Astro's canceled
   // preparation performs a full document navigation instead of reusing scripts.
-  w.document.addEventListener('astro:before-preparation', event => {
-    event.preventDefault();
-    depart();
-  });
+  // Teardown waits for pagehide: a canceled preparation whose navigation never
+  // unloads the page (download, 204, Stop) must leave a working runtime.
+  w.document.addEventListener('astro:before-preparation', event => event.preventDefault());
+  // Astro's fallback for a canceled preparation is a body-less GET, so forms
+  // bypass ClientRouter and keep native submission (POST body, method, target).
+  // Capture on document runs before ClientRouter's bubbling submit listener.
+  w.document.addEventListener('submit', event => {
+    const form = event.target as HTMLElement | null;
+    if (form?.tagName === 'FORM') form.dataset.astroReload = '';
+  }, true);
   w.addEventListener('pagehide', depart);
   // ponytail: BFCache restores old closures; reload instead of reviving stale config.
   w.addEventListener('pageshow', event => {
@@ -66,7 +72,7 @@ export function startAllTracking(w: Window, options: Options = {}): Promise<void
     }
     for (const element of w.document.querySelectorAll('[data-policy-version]')) element.textContent = validVersion ? String(policy.version) : '';
     mountConsentUI(w, consent, ready);
-    diagnostics = mountDiagnostics(w, config.debug, tracking);
+    diagnostics = mountDiagnostics(w, config.debug, tracking, {guard:config.guard.mode, cmpValid:validCMP, ready});
     if (tracking.enabled) w.nativeTracking = createTracking(w, tracking, active);
   };
   // Modules injected at the page stage can also be called by a manual entry.

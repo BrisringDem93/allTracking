@@ -94,7 +94,8 @@ test('failed or timed-out configuration completes denial and purges existing coo
 });
 
 test('late policy and queued sweeps do no work after departure or a changed path',async t=>{
-  for(const departure of ['pagehide','astro:before-preparation','path']){
+  // A canceled astro:before-preparation is not a departure: teardown waits for pagehide.
+  for(const departure of ['pagehide','path']){
     const d=page(),w=d.window;t.after(()=>w.close());w.document.cookie='_ga=old; path=/';
     const callbacks=[];w.setInterval=fn=>{callbacks.push(fn);return 100;};w.setTimeout=fn=>{callbacks.push(fn);return 101;};
     const held=hold(w),loading=startAllTracking(w,{guard:{mode:'enforce'},debug:{mode:'public'}});

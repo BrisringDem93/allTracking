@@ -9,14 +9,16 @@ import {JSDOM,CookieJar} from 'jsdom';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const fixture = join(root, '.fixture');
-const run = (args, cwd = root) => execFileSync('npm', args, {cwd, encoding:'utf8', timeout:120000, env:{...process.env, ASTRO_TELEMETRY_DISABLED:'1'}, stdio:['ignore','pipe','pipe']});
+// Windows ships npm as npm.cmd: reuse the npm CLI that launched us, or let the shell resolve it.
+const npm = process.env.npm_execpath?.endsWith('.js') ? [process.execPath, [process.env.npm_execpath], false] : ['npm', [], process.platform === 'win32'];
+const run = (args, cwd = root) => execFileSync(npm[0], [...npm[1], ...args], {cwd, encoding:'utf8', timeout:120000, shell:npm[2], env:{...process.env, ASTRO_TELEMETRY_DISABLED:'1'}, stdio:['ignore','pipe','pipe']});
 // ponytail: disposable consumer installs the actual tarball, never a source alias.
 rmSync(fixture, {recursive:true, force:true});
 mkdirSync(join(fixture, 'src/pages/admin'), {recursive:true});
 const [packed] = JSON.parse(run(['pack','--ignore-scripts','--json','--pack-destination',fixture]));
 for(const path of ['dist/runtime.js','dist/early.inline.js','dist/settings-client.js','src/ConsentPanel.astro','src/TrackingSettings.astro','src/TrackingHead.astro'])assert.ok(packed.files.some(file=>file.path===path),`pack includes ${path}`);
 assert.ok(packed.files.every(file => file.path === 'package.json' || file.path === 'README.md' || file.path.startsWith('dist/') || ['src/ConsentPanel.astro','src/TrackingSettings.astro','src/TrackingHead.astro'].includes(file.path)));
-assert.equal(packed.version,'0.2.1');
+assert.equal(packed.version,'0.2.2');
 writeFileSync(join(fixture,'package.json'), JSON.stringify({name:'alltracking-fixture', private:true, type:'module', scripts:{build:'astro build'}, dependencies:{astro:'7.2.0','@alltracking/astro':`file:./${packed.filename}`}}));
 console.log(run(['install','--ignore-scripts','--no-audit','--no-fund','--offline'], fixture));
 const installed=join(fixture,'node_modules/@alltracking/astro');
@@ -77,7 +79,7 @@ try {
       const listeners=[];
       for(const target of [w,w.document]){
         const add=target.addEventListener.bind(target);
-        target.addEventListener=(type,handler,options)=>{listeners.push({target,type,handler});return add(type,handler,options);};
+        target.addEventListener=(type,handler,options)=>{listeners.push({target,type,handler,capture:options===true||options?.capture===true});return add(type,handler,options);};
       }
       let firstEarly,firstSetter,earlyListeners;
       for(const script of classic){
@@ -171,11 +173,25 @@ try {
         w.document.cookie='_ga=retained; path=/';w.document.cookie='_fbp=retained; path=/';
         savedConsent=w.localStorage.getItem('alltracking_consent');
       }
+      if(path!=='/admin/tracking'){
+        // Real ClientRouter bundle: a POST must stay a native submission, never Astro's body-less GET fallback.
+        assert.ok(listeners.some(l=>l.target===w.document&&l.type==='submit'&&!l.capture),'ClientRouter submit interception is installed');
+        const lead=w.document.createElement('form');lead.method='post';lead.action='/thanks';
+        const email=w.document.createElement('input');email.name='email';email.value='lead@example.test';lead.append(email);w.document.body.append(lead);
+        let nativePrevented,prepared=false;const onPrepare=()=>{prepared=true;};
+        w.document.addEventListener('astro:before-preparation',onPrepare);
+        w.addEventListener('submit',event=>{nativePrevented=event.defaultPrevented;event.preventDefault();},{once:true});
+        lead.requestSubmit();await new Promise(resolve=>setTimeout(resolve,0));
+        w.document.removeEventListener('astro:before-preparation',onPrepare);lead.remove();
+        assert.equal(nativePrevented,false,'ClientRouter leaves the POST body to the browser');assert.equal(prepared,false);
+      }
       const transition = new w.Event('astro:before-preparation',{cancelable:true});
       w.document.dispatchEvent(transition);
       assert.equal(transition.defaultPrevented,true,'installed runtime cancels SPA preparation before scripts can survive the swap');
+      if(!excluded)assert.equal(w.nativeConsent.get().analytics,true,'a canceled preparation alone is not a departure');
+      w.dispatchEvent(new w.PageTransitionEvent('pagehide',{persisted:false}));
       if(!excluded){
-        assert.equal(w.allTrackingGuard,undefined);assert.equal(Object.hasOwn(w.document,'cookie'),false);
+        assert.equal(w.allTrackingGuard,guard,'guard stays installed, frozen and purge-free until the document is gone');
         assert.match(w.document.cookie,/_ga=retained/);assert.match(w.document.cookie,/_fbp=retained/);
         assert.equal(w.document.querySelector('[data-alltracking-debug]'),null);
         assert.equal(w.nativeTracking.payload().consent.analytics,false);

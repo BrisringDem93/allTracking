@@ -22,6 +22,9 @@
     <span class="consent__reopen-label">Preferenze cookie</span>
   </button>
 
+  <!-- Outside the dialog: receipt failures arrive after it has closed and must stay visible/announced. -->
+  <p class="consent__audit" data-consent-audit role="status" aria-live="polite"></p>
+
   <dialog id="consent-preferences" class="consent__dialog" aria-labelledby="consent-preferences-title" aria-describedby="consent-preferences-description">
     <div class="consent__head">
       <div>
@@ -59,7 +62,6 @@
           <input type="checkbox" role="switch" class="consent__switch" name="marketing" />
         </label>
       </fieldset>
-      <p class="consent__audit" data-consent-audit role="status" aria-live="polite"></p>
       <div class="consent__actions">
         <button type="button" class="consent__button" data-consent-reject>Rifiuta</button>
         <button type="submit" class="consent__button consent__button--primary">Salva preferenze</button>
@@ -88,6 +90,9 @@
   .consent__switch { inline-size: 1.5rem; block-size: 1.5rem; }
   .consent__button:disabled, .consent__switch:disabled { opacity: .6; cursor: not-allowed; }
   .consent__audit:not(:empty), .consent__note:not([hidden]) { border-inline-start: .25rem solid #972929; padding: .5rem; }
+  /* Always rendered (a display:none live region is not announced); invisible while empty. */
+  .consent__audit { position: fixed; z-index: 1001; left: 1rem; bottom: 4.5rem; margin: 0; max-inline-size: min(36rem, calc(100% - 2rem)); box-sizing: border-box; }
+  .consent__audit:not(:empty) { background: #fff; color: #161616; border: 1px solid #666; border-inline-start: .25rem solid #972929; border-radius: .25rem; box-shadow: 0 .5rem 2rem #0003; }
   :is(button, a, input):focus-visible { outline: 3px solid #165dd0; outline-offset: 3px; }
   a { color: #1249a5; }
 </style>

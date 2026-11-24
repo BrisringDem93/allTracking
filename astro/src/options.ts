@@ -17,8 +17,9 @@ export function normalizeOptions(value: Options = {}) {
   const keys = ['disabled','exclude','configEndpoint','policyEndpoint','consentEndpoint','guard','debug'];
   for (const key of Object.keys(value)) if (!keys.includes(key)) throw new TypeError(`Unknown option: ${key}`);
   if (value.disabled !== undefined && typeof value.disabled !== 'boolean') throw new TypeError('disabled must be boolean');
+  // Mandatory separators keep matching linear: an optional "/" between repeated segments backtracks exponentially.
   const path = (input: unknown): string => {
-    if (typeof input !== 'string' || !/^\/(?:[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*\/?)*$(?![\s\S])/.test(input) || input.length > 200) throw new TypeError('Invalid local endpoint/path');
+    if (typeof input !== 'string' || input.length > 200 || !/^\/(?:[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*(?:\/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)*\/?)?$(?![\s\S])/.test(input)) throw new TypeError('Invalid local endpoint/path');
     return input;
   };
   if (value.exclude !== undefined && (!Array.isArray(value.exclude) || value.exclude.length > 100)) throw new TypeError('Invalid exclude paths');

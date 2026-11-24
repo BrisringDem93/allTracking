@@ -2,19 +2,19 @@ import type {AstroIntegration} from 'astro';
 import {fileURLToPath} from 'node:url';
 import {readFileSync} from 'node:fs';
 import {normalizeOptions, type Options} from './options.ts';
+import {guardScript, serializeOptions} from './head.ts';
 export type {Options} from './options.ts';
 export type {GuardOptions, CookieRule} from './guard-config.ts';
 export type {GuardAPI, GuardConsent} from './cookie-guard.ts';
 export type {DebugSettings} from './diagnostics.ts';
+export {guardScript} from './head.ts';
 
-const serializeOptions = (config: ReturnType<typeof normalizeOptions>) => JSON.stringify(config).replace(/</g, '\\u003c').replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029');
-
-/** Trusted local bundle with strictly validated, script-safe options for a FIRST-head component. */
+/** Node-only (build/config time): trusted local bundle with strictly validated, script-safe options.
+ * TrackingHead does not use this, so on-demand pages never need node:fs or node_modules at runtime. */
 export function cookieGuardScript(options: Options = {}): string {
   const config = normalizeOptions(options);
   if (config.disabled || config.guard.mode === 'off') return '';
-  const inline = readFileSync(new URL('./early.inline.js', import.meta.resolve('@alltracking/astro')), 'utf8');
-  return inline.replace('__ALLTRACKING_OPTIONS__', () => serializeOptions(config));
+  return guardScript(readFileSync(new URL('./early.inline.js', import.meta.resolve('@alltracking/astro')), 'utf8'), config);
 }
 
 export default function allTracking(options: Options = {}): AstroIntegration {

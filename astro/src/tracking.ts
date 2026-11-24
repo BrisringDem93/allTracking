@@ -25,6 +25,15 @@ export const CLICK_FIELDS = ['fbclid', 'gclid', 'gbraid', 'wbraid', 'msclkid', '
 export const CAMPAIGN_FIELDS = ['utm_source', 'utm_medium', 'utm_campaign', 'utm_term', 'utm_content', 'cmp'] as const;
 export const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
+const campaignSafe = (v: string) => /^[A-Za-z0-9._~+/% -]+$/.test(v) && !/(?:secret|token|password|passwd|bearer|api[_-]?key)/i.test(v);
+/** Undo repeated percent-encoding so "mario%2540mail.test" cannot hide an email/URL/secret marker. */
+const fullyDecoded = (v: string) => {
+  for (let i = 0; i < 3 && /%[0-9a-f]{2}/i.test(v); i++) {
+    try { v = decodeURIComponent(v); } catch { break; }
+  }
+  return v;
+};
+
 export function sanitizeAttribution(value: unknown, consent: Consent): Record<string, string> {
   consent = normalizeConsent(consent);
   const clean: Record<string, string> = {};
@@ -33,8 +42,8 @@ export function sanitizeAttribution(value: unknown, consent: Consent): Record<st
     if (
       consent.analytics
       && CAMPAIGN_FIELDS.some(field => field === key)
-      && /^[A-Za-z0-9._~+/% -]+$/.test(v)
-      && !/(?:secret|token|password|passwd|bearer|api[_-]?key)/i.test(v)
+      && campaignSafe(v)
+      && campaignSafe(fullyDecoded(v))
     ) clean[key] = v;
     if (!consent.marketing) continue;
     if (CLICK_FIELDS.some(field => field === key) && /^[A-Za-z0-9._~-]+$/.test(v)) clean[key] = v;
@@ -53,6 +62,7 @@ export function collectAttribution(url: string, cookies: string, previous: unkno
     }
   } catch { /* URL non valida: resta solo lo stato consentito */ }
   if (consent.marketing) {
+    const derived = String(values.fbc ?? '');
     for (const part of cookies.split(';')) {
       const [key, ...rest] = part.trim().split('=');
       if (key === '_fbc' || key === '_fbp') {
@@ -60,7 +70,8 @@ export function collectAttribution(url: string, cookies: string, previous: unkno
       }
     }
     const click = sanitizeAttribution(values, consent).fbclid;
-    if (click && !String(values.fbc ?? '').endsWith(`.${click}`)) values.fbc = `fb.1.${now}.${click}`;
+    // A stale _fbc cookie must not re-stamp the fbc already derived for this click on every call.
+    if (click && !String(values.fbc ?? '').endsWith(`.${click}`)) values.fbc = derived.endsWith(`.${click}`) ? derived : `fb.1.${now}.${click}`;
   }
   return sanitizeAttribution(values, consent);
 }

@@ -94,15 +94,19 @@ test('BFCache restoration reloads once without reopening stale consent or tracke
   }
 });
 
-test('pending config cannot initialize after navigation and stale tracker references deny on route changes',async t=>{
+test('canceled preparation keeps the runtime until the page really unloads; stale tracker references deny on route changes',async t=>{
   const {startAllTracking}=await load(),d=dom(),w=d.window;t.after(()=>w.close());
   const pending=[];w.fetch=(url)=>new Promise(resolve=>pending.push({url,resolve}));
   const loading=startAllTracking(w);
   await new Promise(resolve=>setTimeout(resolve,0));
   assert.equal(pending.length,2,'both requests really started before navigation');
   const event=new w.Event('astro:before-preparation',{cancelable:true});w.document.dispatchEvent(event);
+  assert.equal(event.defaultPrevented,true);
   for(const x of pending)x.resolve(Response.json(x.url.includes('policy')?policy:config));
-  await loading;assert.equal(w.nativeTracking,undefined);
+  // A forced navigation that never unloads (download, 204, Stop) must not leave a dead banner/runtime.
+  await loading;assert.ok(w.nativeTracking,'runtime still serves the visible document');
+  w.dispatchEvent(new w.PageTransitionEvent('pagehide',{persisted:false}));
+  assert.deepEqual(w.nativeTracking.payload().consent,{analytics:false,marketing:false},'real unload denies');
   const second=dom(),v=second.window;t.after(()=>v.close());
   v.fetch=async(url,init)=>Response.json(init.method==='POST'?{ok:true,receipt:{...JSON.parse(init.body),createdAt:new Date().toISOString()}}:url.includes('policy')?policy:config);
   await startAllTracking(v);await v.nativeConsent.set({analytics:true});
@@ -137,7 +141,7 @@ test('missing, malformed or unready policy never grants even if tracking config 
 
 test('manual bootstrap installs synchronous guard; departure preserves cookies but withdrawal purges',async t=>{
   const {startAllTracking}=await load();
-  for(const departure of ['astro:before-preparation','pagehide']) {
+  for(const persisted of [false,true]) {
     const d=dom(),w=d.window;t.after(()=>w.close());
     w.fetch=async(url,init)=>Response.json(init.method==='POST'?{ok:true,receipt:{...JSON.parse(init.body),createdAt:new Date().toISOString()}}:url.includes('policy')?policy:config);
     const loading=startAllTracking(w,{guard:{mode:'enforce',sweepDuration:0},debug:{mode:'public'}});
@@ -153,17 +157,31 @@ test('manual bootstrap installs synchronous guard; departure preserves cookies b
     assert.equal(w.allTrackingGuard,guard);await withdrawn;
     await w.nativeConsent.set({analytics:true,marketing:true});
     w.document.cookie='_ga=retained; path=/';w.document.cookie='_fbp=retained; path=/';
-    const target=departure==='pagehide'?w:w.document;
-    target.dispatchEvent(new w.Event(departure,{cancelable:true}));
-    assert.equal(w.allTrackingGuard,undefined);
-    assert.equal(Object.hasOwn(w.document,'cookie'),false);
+    const preparation=new w.Event('astro:before-preparation',{cancelable:true});w.document.dispatchEvent(preparation);
+    assert.equal(preparation.defaultPrevented,true);assert.equal(w.nativeConsent.get().analytics,true,'cancel alone is not departure');
+    w.dispatchEvent(new w.PageTransitionEvent('pagehide',{persisted}));
+    // The setter stays: consent is frozen as it was when the page was left, and sweeps are inert.
+    assert.equal(w.allTrackingGuard,guard);
+    assert.equal(Object.hasOwn(w.document,'cookie'),true);
     assert.match(w.document.cookie,/_ga=retained/,'navigation denial must not delete granted cookies');
     assert.match(w.document.cookie,/_fbp=retained/);
     assert.deepEqual(w.nativeTracking.payload().consent,{analytics:false,marketing:false});
     assert.equal(w.document.querySelector('[data-alltracking-debug]'),null);
-    assert.equal(guard.stats().active,false);
-    guard.sweep();assert.match(w.document.cookie,/_ga=retained/,'queued sweeps are inert');
+    guard.sweep();w.dispatchEvent(new w.Event('alltracking:consent'));
+    assert.match(w.document.cookie,/_ga=retained/,'queued sweeps are inert');
+    w.document.cookie='_ga=unload; path=/';assert.match(w.document.cookie,/_ga=unload/,'frozen grant still allows consented writers');
   }
+});
+
+test('departure keeps blocking unconsented writes made by unload-time listeners',async t=>{
+  const {startAllTracking}=await load(),d=dom(),w=d.window;t.after(()=>w.close());
+  w.fetch=async(url,init)=>Response.json(init.method==='POST'?{ok:true,receipt:{...JSON.parse(init.body),createdAt:new Date().toISOString()}}:url.includes('policy')?policy:config);
+  await startAllTracking(w,{guard:{mode:'enforce',sweepDuration:0}});
+  w.addEventListener('pagehide',()=>{w.document.cookie='_ga=on-pagehide; path=/';w.document.cookie='session=kept; path=/';});
+  w.dispatchEvent(new w.PageTransitionEvent('pagehide',{persisted:false}));
+  w.document.cookie='_gcl_au=on-unload; path=/';
+  assert.equal(w.document.cookie,'session=kept');
+  assert.ok(w.allTrackingGuard.stats().blocked>=2);
 });
 
 test('debug uses resolved normalized config even with tracking disabled; omitted debug/guard stay off',async t=>{
@@ -207,8 +225,21 @@ test('pending config cannot mount diagnostics after ordinary pagehide',async t=>
   w.dispatchEvent(new w.PageTransitionEvent('pagehide',{persisted:false}));
   for(const x of pending)x.resolve(Response.json(x.url.includes('policy')?policy:config));
   await loading;
-  assert.equal(w.nativeTracking,undefined);assert.equal(w.allTrackingGuard,undefined);
+  assert.equal(w.nativeTracking,undefined);assert.equal(w.allTrackingConsentReady,false);
+  // Guard stays as a frozen, purge-free blocker until the document is gone.
+  assert.ok(w.allTrackingGuard);w.document.cookie='_ga=late; path=/';assert.equal(w.document.cookie,'');
   assert.equal(w.document.querySelector('[data-alltracking-debug]'),null);
+});
+
+test('ClientRouter cannot turn form submissions into body-less GET navigations',async t=>{
+  const {startAllTracking}=await load(),d=dom(),w=d.window;t.after(()=>w.close());
+  w.fetch=async url=>Response.json(url.includes('policy')?policy:config);
+  await startAllTracking(w,{disabled:true});
+  const form=w.document.createElement('form');form.method='post';form.action='/thanks';w.document.body.append(form);
+  // Same check ClientRouter runs in its bubbling document submit listener (isReloadEl).
+  let routerSkips;w.document.addEventListener('submit',event=>{routerSkips=event.target.dataset.astroReload!==undefined;event.preventDefault();});
+  form.requestSubmit();
+  assert.equal(routerSkips,true,'native POST is kept, even on disabled/excluded documents');
 });
 
 test('early guard never accepts a CMP/global grant or a pending native receipt',async t=>{

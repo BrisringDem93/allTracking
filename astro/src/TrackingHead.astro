@@ -1,8 +1,12 @@
 ---
-import {cookieGuardScript, type Options} from '../dist/index.js';
+// Vite inlines the bundle as a string: no node:fs/import.meta.resolve at render time,
+// so on-demand pages also work on bundled, serverless and edge adapters.
+import inline from '../dist/early.inline.js?raw';
+import {guardScript} from '../dist/head.js';
+import type {Options} from '../dist/index.js';
 interface Props { options?: Options; }
 // Place FIRST in <head>, before author cookie writers; reuse the integration's options.
 // Astro's automatic head-inline fallback is appended after author head content.
-const script = cookieGuardScript(Astro.props.options);
+const script = guardScript(inline, Astro.props.options);
 ---
 {script && <script is:inline set:html={script} />}

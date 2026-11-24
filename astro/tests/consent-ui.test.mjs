@@ -17,7 +17,7 @@ async function load(entry, {wip = false} = {}) {
       b.onLoad({filter:/.*/, namespace:'empty'}, () => ({contents:'', loader:'js'}));
       b.onLoad({filter:/\.astro$/}, async a => ({
         // Container's createManifest omits site in this Astro version; supply the local test site to real components.
-        contents:transform(readFileSync(a.path,'utf8').replaceAll('Astro.site', 'new URL("https://local.test")'), {filename:a.path, internalURL:'astro/compiler-runtime', resolvePath:s=>s}).code,
+        contents:transform(readFileSync(a.path,'utf8').replaceAll('Astro.site', 'new URL("https://local.test")'), {filename:a.path.replaceAll('\\','/'), internalURL:'astro/compiler-runtime', resolvePath:s=>s}).code,
         loader:'ts', resolveDir:dirname(a.path),
       }));
       b.onLoad({filter:/src\/lib\/site\.ts$/}, a => ({contents:readFileSync(a.path,'utf8').replace(/export const workInProgress = (?:true|false);/, `export const workInProgress = ${wip};`), loader:'ts'}));
@@ -75,7 +75,10 @@ test('real Astro panel has a nonmodal labelled region, equal actions, permanent 
     assert.equal(input.disabled, category === 'necessary');
     assert.ok(input.labels.length);
   }
-  assert.equal(dialog.querySelector('[data-consent-audit][role="status"]').textContent, '');
+  const audit = d.querySelector('[data-consent-audit][role="status"]');
+  assert.equal(audit.textContent, '');
+  assert.equal(dialog.contains(audit), false, 'failures arrive after the dialog closed: status must stay rendered');
+  assert.equal(banner.contains(audit), false);
   assert.equal(d.querySelector('[data-consent-receipt]'), null);
   assert.doesNotMatch(d.body.textContent,/GHL|Clarity|Deminicis/i);
   const css = readFileSync('src/ConsentPanel.astro','utf8');
@@ -185,4 +188,27 @@ for (const [name,signals] of [
   d.querySelector('[data-consent-accept]').click();
   await new Promise(resolve=>setTimeout(resolve,0));
   assert.deepEqual(cmp.get(),{necessary:true,analytics:true,marketing:true});
+});
+
+test('a failed receipt stays visible after the dialog closes and survives re-syncs; an open dialog keeps unsaved switches', async t => {
+  const {w,d,dialog} = await setup(t);
+  w.fetch = async () => { throw Error('offline'); };
+  d.querySelector('[data-consent-customize]').click();
+  d.querySelector('[name="analytics"]').click();
+  d.querySelector('form').requestSubmit();
+  await new Promise(r=>setTimeout(r,0));
+  const status = d.querySelector('[data-consent-audit]');
+  assert.equal(dialog.open,false);
+  assert.match(status.textContent,/non confermata/i);
+  w.dispatchEvent(new w.Event('focus'));
+  w.dispatchEvent(new w.StorageEvent('storage',{key:'alltracking_consent'}));
+  assert.match(status.textContent,/non confermata/i,'focus/storage re-syncs must not erase the only failure feedback');
+  d.querySelector('[data-consent-reopen]').click();
+  const marketing = d.querySelector('[name="marketing"]');
+  marketing.click();assert.equal(marketing.checked,true);
+  w.dispatchEvent(new w.Event('focus'));
+  assert.equal(marketing.checked,true,'switching tabs must not revert (or re-grant) unsaved edits');
+  d.querySelector('[data-consent-close]').click();
+  d.querySelector('[data-consent-reopen]').click();
+  assert.equal(marketing.checked,false,'reopening shows the effective stored choice');
 });

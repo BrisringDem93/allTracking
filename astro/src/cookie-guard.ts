@@ -106,12 +106,28 @@ export function installCookieGuard(w:Window,options:GuardOptions={},getConsent:(
   const setter=(value:string) => {
     if (disposed) { nativeSet(value); return; }
     const text=String(value), parts=text.split(';'), first=parts.shift()??'', eq=first.indexOf('='), name=(eq<0?first:first.slice(0,eq)).trim();
-    const attrs=new Map(parts.map(p=>{const i=p.indexOf('='); return [(i<0?p:p.slice(0,i)).trim().toLowerCase(),i<0?'':p.slice(i+1).trim()];}));
-    const maxAge=attrs.get('max-age'), validMax=maxAge!==undefined && /^-?\d+$/.test(maxAge);
+    const attrs=new Map<string,string>();
+    let maxAge:string|undefined;
+    for (const p of parts) {
+      const i=p.indexOf('='), key=(i<0?p:p.slice(0,i)).trim().toLowerCase(), v=i<0?'':p.slice(i+1).trim();
+      attrs.set(key,v);
+      // RFC 6265: an invalid Max-Age is ignored, so the last VALID one wins.
+      if (key==='max-age' && /^-?\d+$/.test(v)) maxAge=v;
+    }
+    let ev=verdict(name,attrs.get('domain')??'');
+    // "=_ga=1" has an empty name, but browsers serialize it as "_ga=1": judge the visible key too.
+    if (eq===0 && !ev.blocked) {
+      const visible=first.slice(1).split('=',1)[0].trim();
+      if (visible) ev=verdict(visible,attrs.get('domain')??'');
+    }
     // Max-Age takes precedence over Expires, as it does in native cookie storage.
-    const expiring=validMax?Number(maxAge)<=0:Date.parse(attrs.get('expires')??'')<=Date.now();
-    if (expiring) { nativeSet(text); return; }
-    const ev=verdict(name,attrs.get('domain')??'');
+    const expiring=maxAge!==undefined?Number(maxAge)<=0:Date.parse(attrs.get('expires')??'')<=Date.now();
+    if (expiring) {
+      // Deletions stay allowed, but Date.parse accepts dates cookie parsers reject (e.g. "expires=0"
+      // becomes a session cookie): a blocked name may only ever be deleted, whatever the browser parses.
+      nativeSet(ev.blocked && ev.action!=='delete' && config.mode==='enforce' ? `${text}; Max-Age=0` : text);
+      return;
+    }
     if (ev.blocked && ev.action!=='delete') {
       if(config.mode==='enforce') {state.blocked++;return;}
       state.wouldBlock++;
@@ -120,15 +136,14 @@ export function installCookieGuard(w:Window,options:GuardOptions={},getConsent:(
     if(writtenPath?.startsWith('/') && paths.size<64) paths.add(writtenPath);
     nativeSet(text);
   };
+  let replacedReported=false;
+  // Read-only: reporting a replaced setter must not switch off sweeps, which use the native
+  // descriptor directly and keep purging/revoking whether or not diagnostics looked.
   const stats=():GuardStats => {
     const current=Object.getOwnPropertyDescriptor(doc,'cookie');
-    if(state.installed && (current?.get!==getter || current?.set!==setter)) {
-      state.installed=false;state.active=false;state.sweeping=false;
-      if(interval!==undefined) w.clearInterval(interval);
-      if(timeout!==undefined) w.clearTimeout(timeout);
-      error('Cookie setter replaced by another script; guard inactive');
-    }
-    return {...state,errors:[...state.errors]};
+    const replaced=state.installed && (current?.get!==getter || current?.set!==setter);
+    if(replaced && !replacedReported) { replacedReported=true; error('Cookie setter replaced by another script; writes may bypass blocking'); }
+    return {...state,installed:state.installed && !replaced,errors:[...state.errors]};
   };
   const api:GuardAPI={mode:config.mode,evaluate:verdict,cookies,consent,stats,refresh:sweep,sweep,destroy(){
     if(disposed) return;

@@ -14,19 +14,23 @@ export function mountConsentUI(w: Window, cmp: ReturnType<typeof createConsent>,
   const resetAudit = () => { audit.textContent = ''; };
   let opener: HTMLElement = reopen;
   const blocked = () => !ready;
-  const sync = () => {
+  // `force` refreshes the switches; otherwise an open dialog keeps the visitor's unsaved edits
+  // (focus, storage and CMP ticks re-sync constantly and must not revert or re-grant them).
+  const sync = (force = false) => {
     const choice = cmp.get();
     const reason = !ready ? 'Informativa completa non disponibile: storage opzionali e tag Google/Meta restano disattivati.' : '';
     root.querySelectorAll<HTMLElement>('[data-consent-reason]').forEach(el => { el.textContent = reason; el.hidden = !reason; });
     root.querySelector<HTMLButtonElement>('[data-consent-accept]')!.disabled = blocked();
     banner.hidden = cmp.hasChoice();
     analytics.disabled = marketing.disabled = blocked();
-    analytics.checked = !blocked() && choice.analytics;
-    marketing.checked = !blocked() && choice.marketing;
+    if (force || !dialog.open) {
+      analytics.checked = !blocked() && choice.analytics;
+      marketing.checked = !blocked() && choice.marketing;
+    }
   };
   const open = (button: HTMLElement) => {
     opener = button;
-    sync();
+    sync(true);
     if (!dialog.open) dialog.showModal();
   };
   root.querySelector<HTMLButtonElement>('[data-consent-customize]')!.addEventListener('click', event => open(event.currentTarget as HTMLElement));
@@ -47,13 +51,15 @@ export function mountConsentUI(w: Window, cmp: ReturnType<typeof createConsent>,
     event.preventDefault();
     save(analytics.checked, marketing.checked);
   });
-  w.addEventListener('alltracking:consent', () => { resetAudit(); sync(); });
+  // A failure stays visible until the next save: focus/storage/CMP re-syncs must not erase it.
+  w.addEventListener('alltracking:consent', () => sync());
   // ponytail: the audit trail stays server-side; only a failed save needs the visitor's attention.
+  // The status lives outside the dialog, which is already closed when the receipt request settles.
   w.addEventListener('alltracking:audit', event => {
     const {status} = record((event as CustomEvent).detail);
     if (status === 'saving' || status === 'saved') resetAudit();
-    else if (status === 'failed') audit.textContent = 'Registrazione non confermata. I nuovi consensi opzionali restano disattivati; il rifiuto è applicato subito.';
+    else if (status === 'failed') audit.textContent = 'Registrazione non confermata. I nuovi consensi opzionali restano disattivati; il rifiuto è applicato subito. Puoi riprovare da «Preferenze cookie».';
   });
   reopen.hidden = false;
-  sync();
+  sync(true);
 }

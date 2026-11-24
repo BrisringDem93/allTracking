@@ -1,20 +1,25 @@
 import {normalizeConfig, normalizeConsent, readConsent, record, type TrackingConfig} from './tracking.ts';
 
 export type DebugSettings = {mode:'off'|'public'; settingsPath?:string};
+/** Runtime facts the widget cannot infer from window globals alone. */
+export type DiagnosticContext = {guard?:'off'|'monitor'|'enforce'; cmpValid?:boolean; ready?:boolean};
 const TABS = ['Consenso','Cookie','Attesi','Blocco','Tag & GA4'];
 const KEY = 'alltracking.debug.';
+const GUARD_MODES = ['off','monitor','enforce'];
 
-/** Same-origin path only: never forward query strings, credentials or external destinations. */
+/** Same-origin path only: never forward query strings, credentials or external destinations.
+ * Same rule as the integration's local paths (no empty segments, max 200), without dots; linear-time pattern. */
 export function safeSettingsPath(value: unknown): string | undefined {
-  return typeof value === 'string' && /^\/(?!\/)[A-Za-z0-9/_-]*$/.test(value) ? value : undefined;
+  return typeof value === 'string' && value.length <= 200 && /^\/(?:[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*\/?)?$(?![\s\S])/.test(value) ? value : undefined;
 }
 
-export function diagnosticSnapshot(w: Window, input: TrackingConfig) {
+export function diagnosticSnapshot(w: Window, input: TrackingConfig, context: DiagnosticContext = {}) {
   const config=normalizeConfig(input), scope=record(w), guard=record(scope.allTrackingGuard);
   let consent=normalizeConsent(null);
   try { consent=normalizeConsent(w.nativeConsent ? w.nativeConsent.get() : readConsent(config.cmp,w)); } catch { /* unavailable consent stays denied */ }
   let names:string[]=[];
-  try { names=[...new Set(w.document.cookie.split(';').map(c=>c.split('=',1)[0].trim()).filter(Boolean))].sort(); } catch { /* browser denies cookie access */ }
+  // A cookie without "=" is nameless: its text is a value and must never be shown as a name.
+  try { names=[...new Set(w.document.cookie.split(';').filter(c=>c.includes('=')).map(c=>c.split('=',1)[0].trim()).filter(Boolean))].sort(); } catch { /* browser denies cookie access */ }
   const cookies=names.map(name=> {
     let result:Record<string,unknown>={};
     try { if (typeof guard.evaluate === 'function') result=record(guard.evaluate(name,'')); } catch { /* unavailable verdict */ }
@@ -36,9 +41,12 @@ export function diagnosticSnapshot(w: Window, input: TrackingConfig) {
   let stats:Record<string,unknown>={};
   try { if (typeof guard.stats === 'function') stats=record(guard.stats()); } catch { /* unavailable stats */ }
   const count=(key:string)=>typeof stats[key] === 'number' && Number.isFinite(stats[key]) ? Math.max(0,stats[key] as number) : null;
+  // The guard API exists only when a mode other than off was installed: off is a configuration, not a failure.
+  const guardMode=GUARD_MODES.includes(String(guard.mode)) ? String(guard.mode) : context.guard === 'off' ? 'off' : 'unavailable';
   return {config,consent,cookies,expected,problems:forbidden.size,
-    cmp:{configured:config.cmp,native:!!w.nativeConsent,cookiebot:!!scope.Cookiebot,iubenda:!!scope._iub},
-    guard:{mode:['off','monitor','enforce'].includes(String(guard.mode)) ? String(guard.mode) : 'unavailable',
+    cmp:{configured:context.cmpValid === false ? 'assente/non valido' : config.cmp,native:!!w.nativeConsent,cookiebot:!!scope.Cookiebot,iubenda:!!scope._iub,
+      ready:typeof context.ready === 'boolean' ? context.ready : null},
+    guard:{mode:guardMode,
       installed:typeof stats.installed === 'boolean' ? stats.installed : null,active:typeof stats.active === 'boolean' ? stats.active : null,
       sweeping:typeof stats.sweeping === 'boolean' ? stats.sweeping : null,errors:Array.isArray(stats.errors) ? stats.errors.length : null,
       blocked:count('blocked'),deleted:count('deleted')},
@@ -48,7 +56,7 @@ export function diagnosticSnapshot(w: Window, input: TrackingConfig) {
 }
 
 /** Read-only diagnostics; explicit public mode is for staging, not an authorization mechanism. */
-export function mountDiagnostics(w: Window, settings: DebugSettings, config: TrackingConfig): {destroy():void} | undefined {
+export function mountDiagnostics(w: Window, settings: DebugSettings, config: TrackingConfig, context: DiagnosticContext = {}): {destroy():void} | undefined {
   if (settings.mode !== 'public' || !w.document.body || w.document.querySelector('[data-alltracking-debug]')) return;
   const d=w.document, root=d.createElement('section'); root.dataset.alltrackingDebug=''; root.setAttribute('aria-label','Diagnostica tracking');
   const cleanups:Array<()=>void>=[]; let alive=true;
@@ -69,26 +77,27 @@ export function mountDiagnostics(w: Window, settings: DebugSettings, config: Tra
   let current=Math.max(0,TABS.indexOf(store('tab') || ''));
   const body=el('div','',panel);body.dataset.debugBody='';body.setAttribute('role','tabpanel');body.id='alltracking-debug-body';body.tabIndex=0;
   const tabButtons=TABS.map((name,i)=>{const b=button(name,tabs);b.setAttribute('role','tab');b.id=`alltracking-debug-tab-${i}`;b.setAttribute('aria-controls',body.id);return b;});
-  const snapshot=()=>diagnosticSnapshot(w,config);
+  const snapshot=()=>diagnosticSnapshot(w,config,context);
   const render=()=>{
     if(!alive)return;
     const s=snapshot(),g=s.guard;
     const warning=g.mode === 'unavailable' ? 'Guard: stato non disponibile.'
       : g.mode !== 'off' && (g.installed !== true || g.active !== true) ? (g.mode === 'enforce' ? 'Enforcement richiesta ma non attiva.' : 'Monitor richiesto ma non attivo.')
-      : g.errors === null ? 'Guard: stato non disponibile.' : g.errors > 0 ? 'Guard: errori registrati.' : '';
+      : g.errors === null ? (g.mode === 'off' ? '' : 'Guard: stato non disponibile.') : g.errors > 0 ? 'Guard: errori registrati.' : '';
     const status=g.mode === 'off' ? 'Disattivato intenzionalmente.' : g.active === true && g.installed === true ? (g.mode === 'monitor' ? 'Monitor attivo: osserva soltanto, non blocca.' : 'Enforcement attiva.') : '';
     badge.textContent=warning ? '!' : s.problems ? String(s.problems) : g.mode === 'off' || g.mode === 'monitor' ? g.mode : 'ok';
     badge.setAttribute('aria-label',`${s.problems} problemi cookie; Guard: ${warning || g.mode+'. '+status}`);
     tabButtons.forEach((b,i)=>{b.setAttribute('aria-selected',String(i===current));b.tabIndex=i===current ? 0 : -1;});body.setAttribute('aria-labelledby',tabButtons[current].id);
     const grant=(v:boolean)=>v?'concesso':'negato';
     const lines=[
-      `Consenso live browser: analytics ${grant(s.consent.analytics)}, marketing ${grant(s.consent.marketing)}.\nCMP configurato: ${s.cmp.configured}; native ${s.cmp.native}; Cookiebot ${s.cmp.cookiebot}; iubenda ${s.cmp.iubenda}.\nSnapshot server: non disponibile.\nPreferences: non supportate dal banner nativo; negate senza host verificato.`,
+      `Consenso live browser: analytics ${grant(s.consent.analytics)}, marketing ${grant(s.consent.marketing)}.\nCMP configurato: ${s.cmp.configured}; native ${s.cmp.native}; Cookiebot ${s.cmp.cookiebot}; iubenda ${s.cmp.iubenda}.\nConsenso opzionale abilitabile (CMP e policy validi): ${s.cmp.ready === null ? 'non disponibile' : s.cmp.ready ? 'sì' : 'no — consenso negato finché config/policy non sono validi'}.\nSnapshot server: non disponibile.\nPreferences: non supportate dal banner nativo; negate senza host verificato.`,
       `Solo nomi dei cookie JavaScript di questa pagina; HttpOnly/altri domini non visibili.\n${s.cookies.map(c=>`${c.name}: ${c.verdict}${c.action ? ' / '+c.action : ''}`).join('\n') || 'Nessun cookie visibile.'}`,
       `${s.expected.map(e=>`${e.name}: atteso ${e.expected === 'maybe'?'dipende (tag, browser, adblock)':e.expected}; presenti ${e.present.join(', ') || 'nessuno'}`).join('\n')}\nGTM: attese condizionali. fst_uid/fst_clid non attesi: attribuzione e identità in memoria, nessun cookie persistente del pacchetto.`,
       `Guard: ${g.mode} (modalità richiesta).\n${warning ? 'ATTENZIONE: '+warning+'\n' : ''}${status}\nInstallato: ${g.installed ?? 'non disponibile'}; attivo: ${g.active ?? 'non disponibile'}; sweep: ${g.sweeping ?? 'non disponibile'}; errori: ${g.errors ?? 'non disponibile'}.\nBloccati: ${g.blocked ?? 'non disponibile'}; cancellati: ${g.deleted ?? 'non disponibile'}.\nMonitor osserva soltanto; nessuna enforcement installata dal widget.\nPreferences: negate senza supporto host verificato.`,
       `Configurazione: ${s.config.enabled?'attiva':'disattiva'} / ${s.config.mode}\nGTM ${s.config.gtmId || '—'}; GA4 ${s.config.ga4Id || '—'}; Meta ${s.config.metaPixelId || '—'}.\ndataLayer: ${s.tags.dataLayer ?? 'non disponibile'} elementi; gtag: ${s.tags.gtag}; fbq: ${s.tags.fbq}.\nFlag server configurati (non prova di consegna): N8n ${s.config.serverN8n}, Meta ${s.config.serverMeta}, GA4 ${s.config.serverGA4}.\nBackend, queue/cron, pipeline e consegna: non disponibili nel pacchetto.`,
     ];
-    const scroll=body.scrollTop;body.textContent=lines[current];body.scrollTop=scroll;
+    // Rewriting identical text every poll would collapse the user's selection and spam assistive tech.
+    if(body.textContent!==lines[current]){const scroll=body.scrollTop;body.textContent=lines[current];body.scrollTop=scroll;}
   };
   const clamp=()=>{if(root.style.left)place(parseFloat(root.style.left),parseFloat(root.style.top));};
   const place=(x:number,y:number)=>{const r=root.getBoundingClientRect();root.style.left=Math.round(Math.max(8,Math.min(x,Math.max(8,w.innerWidth-r.width-8))))+'px';root.style.top=Math.round(Math.max(8,Math.min(y,Math.max(8,w.innerHeight-r.height-8))))+'px';root.style.right=root.style.bottom='auto';};
@@ -104,9 +113,11 @@ export function mountDiagnostics(w: Window, settings: DebugSettings, config: Tra
   });
   for(const handle of [head,toggle]){
     let start:{x:number;y:number;px:number;py:number;id:number}|undefined,moved=false;
-    on(handle,'pointerdown',event=>{const e=event as PointerEvent;if(e.button!==0 || (handle===head && (e.target as Element).closest('button,a')))return;const r=root.getBoundingClientRect();start={x:r.left,y:r.top,px:e.clientX,py:e.clientY,id:e.pointerId};moved=false;try{handle.setPointerCapture(e.pointerId);}catch{/* no capture */}});
+    // Touch/pen drags emit no trailing click, so a stale "moved" would swallow the next tap: reset on every press.
+    on(handle,'pointerdown',event=>{const e=event as PointerEvent;moved=false;if(e.button!==0 || (handle===head && (e.target as Element).closest('button,a')))return;const r=root.getBoundingClientRect();start={x:r.left,y:r.top,px:e.clientX,py:e.clientY,id:e.pointerId};try{handle.setPointerCapture(e.pointerId);}catch{/* no capture */}});
     on(handle,'pointermove',event=>{const e=event as PointerEvent;if(!start || e.pointerId!==start.id)return;const dx=e.clientX-start.px,dy=e.clientY-start.py;if(!moved && Math.abs(dx)<4 && Math.abs(dy)<4)return;moved=true;place(start.x+dx,start.y+dy);e.preventDefault();});
-    const end=()=>{if(!start)return;start=undefined;if(moved)store('pos',JSON.stringify({x:parseFloat(root.style.left),y:parseFloat(root.style.top)}));};
+    // The drag-end click (mouse) arrives in the same task; clear afterwards so a later keyboard activation is not swallowed.
+    const end=()=>{if(!start)return;start=undefined;if(moved){store('pos',JSON.stringify({x:parseFloat(root.style.left),y:parseFloat(root.style.top)}));w.setTimeout(()=>{moved=false;},0);}};
     on(handle,'pointerup',end);on(handle,'pointercancel',end);on(handle,'click',e=>{if(moved){moved=false;e.preventDefault();e.stopImmediatePropagation();}},true);
   }
   d.body.append(root);

@@ -51,11 +51,14 @@ export function createTracking(w: TrackingWindow, value: unknown, active: () => 
   const sync = () => {
     const {consent, attribution: fields} = payload();
     for (const form of w.document.querySelectorAll<HTMLFormElement>('form[data-landing-form]')) {
-      for (const input of form.querySelectorAll<HTMLInputElement>('[data-attribution]')) {
-        if (!(input.name in fields)) input.remove();
+      // Every associated control (select, textarea, form="id", added later) counts as application-owned.
+      const appOwns = (name: string) => [...form.elements].some(el => (el as HTMLInputElement).name === name && !('attribution' in (el as HTMLElement).dataset));
+      for (const input of form.querySelectorAll<HTMLInputElement>('input[data-attribution]')) {
+        if (!Object.hasOwn(fields, input.name) || appOwns(input.name)) input.remove();
       }
       for (const [name, value] of Object.entries(fields)) {
-        let input = form.querySelector<HTMLInputElement>(`input[name="${name}"]`);
+        if (appOwns(name)) continue;
+        let input = form.querySelector<HTMLInputElement>(`input[data-attribution][name="${name}"]`);
         if (!input) {
           input = w.document.createElement('input');
           input.type = 'hidden';
@@ -63,7 +66,7 @@ export function createTracking(w: TrackingWindow, value: unknown, active: () => 
           input.dataset.attribution = '';
           form.append(input);
         }
-        if ('attribution' in input.dataset) input.value = value;
+        input.value = value;
       }
     }
     if (!config.enabled) return;

@@ -3,6 +3,8 @@ import {normalizeOptions} from './options.ts';
 
 const STORE = 'alltracking_consent';
 const MAX_AGE = CONSENT_MAX_AGE;
+// Receipt dates come from the server clock; visitors' clocks routinely lag by seconds or minutes.
+const CLOCK_SKEW = 24 * 3600 * 1000;
 const denied = () => ({necessary:true as const, analytics:false, marketing:false});
 type Choice = ReturnType<typeof denied>;
 type Saved = Choice & {subjectId:string; receiptId:string; version:string; updatedAt:number; confirmed:boolean};
@@ -86,10 +88,11 @@ export function createConsent(w: Window, version: string, ready = true, consentE
       const valid = response.ok && result.ok === true && stored.subjectId === receipt.subjectId
         && stored.receiptId === receipt.receiptId && stored.version === receipt.version
         && stored.necessary === true && stored.analytics === receipt.analytics && stored.marketing === receipt.marketing
-        && ['none','gpc','dnt'].includes(String(stored.signal)) && Number.isFinite(createdAt) && createdAt <= Date.now() && Date.now()-createdAt < MAX_AGE;
+        && ['none','gpc','dnt'].includes(String(stored.signal)) && Number.isFinite(createdAt) && createdAt <= Date.now()+CLOCK_SKEW && Date.now()-createdAt < MAX_AGE;
       if (!valid) { status('failed'); return; }
       if (!live() || saved?.receiptId !== receipt.receiptId || version !== receipt.version) return;
-      saved = {...receipt,updatedAt:createdAt,confirmed:true};
+      // Clamp to the local clock: expiry never exceeds 180 days from the server date and restore() stays consistent.
+      saved = {...receipt,updatedAt:Math.min(createdAt,Date.now()),confirmed:true};
       choice = {necessary:true,...normalizeConsent(saved)};
       try { w.localStorage.setItem(STORE,JSON.stringify(saved)); storageBlocked=false; } catch { /* Confirmed only in this runtime. */ }
       notify(); status('saved');
@@ -110,16 +113,20 @@ export function createConsent(w: Window, version: string, ready = true, consentE
       return;
     }
     try { w.localStorage.setItem(STORE, JSON.stringify(saved)); storageBlocked=false; } catch {
-      // A failed replacement must not leave an earlier grant for the next load.
-      try { w.localStorage.removeItem(STORE); storageBlocked=false; } catch { /* memory-only choice */ }
+      // A failed replacement must not leave an earlier grant for the next load. The tombstone stays:
+      // storage no longer holds this choice, so restore() must not wipe the in-memory one.
+      try { w.localStorage.removeItem(STORE); } catch { /* memory-only choice */ }
     }
     notify();
     await audit(saved);
   };
+  // Only an effective, receipt-confirmed native grant that the external CMP now denies is a revocation.
+  // Pending, unconfirmed or policy-gated choices are already denied by get() and must not be rewritten.
   const syncCMP = () => {
     if (!live()) return;
+    const own = ready && hasChoice() && saved?.confirmed ? choice : undefined;
     const effective=get();
-    if ((choice.analytics && !effective.analytics) || (choice.marketing && !effective.marketing)) void set(effective);
+    if (own && ((own.analytics && !effective.analytics) || (own.marketing && !effective.marketing))) void set(effective);
     else notify();
   };
   const cmpCookies = () => {
