@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {JSDOM} from 'jsdom';
+import {readFileSync} from 'node:fs';
+import {runInNewContext} from 'node:vm';
 const client = await import('../src/tracking-client.ts');
 
 test('revoca rimuove hidden, azzera payload e notifica i tag già caricati', () => {
@@ -18,18 +20,52 @@ test('revoca rimuove hidden, azzera payload e notifica i tag già caricati', () 
 const dom = () => new JSDOM('<form data-landing-form><input name="email" value="private@example.test"></form>', {url:'https://site.test/?fbclid=CLICK&utm_source=test'});
 const config = {enabled:true,mode:'direct',ga4Id:'G-TEST123',metaPixelId:'123456789',attribution:true,formEvents:true};
 
-test('GTM esclusivo solo con entrambi i consensi Cookiebot, segnali ripetuti idempotenti', () => {
+test('GTM starts denied once; only effective consent changes notify the container', () => {
   const d = dom(), w = d.window;
-  w.Cookiebot = {consent: {statistics:true,marketing:false}};
+  w.Cookiebot = {consent:{statistics:false,marketing:false}};
   client.createTracking(w, {...config, mode:'gtm', gtmId:'GTM-TEST123', cmp:'cookiebot'});
-  assert.equal(w.document.scripts.length, 0);
-  w.Cookiebot.consent.marketing = true;
-  w.dispatchEvent(new w.Event('CookiebotOnAccept'));
-  w.dispatchEvent(new w.Event('CookiebotOnConsentReady'));
+  client.createTracking(w, {...config, mode:'gtm', gtmId:'GTM-TEST123', cmp:'cookiebot'});
   assert.equal(w.document.scripts.length, 1);
-  assert.match(w.document.scripts[0].src, /gtm.js\?id=GTM-TEST123/);
+  const states = [[false,false],[true,false],[true,true],[false,false]];
+  for (const [statistics,marketing] of states.slice(1)) {
+    Object.assign(w.Cookiebot.consent,{statistics,marketing});
+    w.dispatchEvent(new w.Event('CookiebotOnAccept'));
+    w.dispatchEvent(new w.Event('CookiebotOnConsentReady'));
+    w.document.querySelector('form').dispatchEvent(new w.Event('submit',{bubbles:true}));
+  }
+  const storage = (a,m) => ({analytics_storage:a?'granted':'denied',ad_storage:m?'granted':'denied',ad_user_data:m?'granted':'denied',ad_personalization:m?'granted':'denied'});
+  const [initial,start,...changes] = w.dataLayer;
+  assert.deepEqual(Array.from(initial), ['consent','default',storage(false,false)]);
+  assert.equal(start.event,'gtm.js');
+  assert.deepEqual(changes.map(x => x.event ? x : Array.from(x)), states.flatMap(([analytics,marketing]) => [
+    ['consent','update',storage(analytics,marketing)], {event:'alltracking_consent_update',analytics,marketing}
+  ]));
+  assert.deepEqual(Array.from(w.document.scripts,s=>s.src), ['https://www.googletagmanager.com/gtm.js?id=GTM-TEST123']);
   assert.equal(w.fbq, undefined);
-  assert.equal(w.dataLayer.filter(x => x.event === 'gtm.js').length, 1);
+  d.window.close();
+});
+
+test('Astro GTM Meta example: no WP transport, one loader/PageView, revoke and regrant', () => {
+  const html = readFileSync(new URL('../gtm/meta-pageview.html',import.meta.url),'utf8');
+  const script = html.trim().slice('<script>'.length,-'</script>'.length).replace('REPLACE_WITH_PIXEL_ID','123456789');
+  const d = dom(), w = d.window;
+  let marketing = false;
+  w.nativeConsent = {get:() => ({marketing})};
+  const fire = () => runInNewContext(script,{window:w,document:w.document});
+  fire(); assert.equal(w.fbq,undefined);
+  marketing = true; fire(); fire();
+  assert.equal(w.fbq.queue.length,0,'do not queue hits while the vendor loader is pending');
+  marketing = false; fire(); w.document.scripts[0].onload();
+  assert.equal(w.fbq.queue.length,0);
+  marketing = true; fire(); fire();
+  marketing = false; fire(); marketing = true; fire();
+  assert.equal(w.fbq,w._fbq);
+  assert.equal(w.document.scripts.length,1);
+  const calls = Array.from(w.fbq.queue,x=>Array.from(x));
+  assert.deepEqual(calls.filter(x=>x[0]==='init'),[['init','123456789']]);
+  assert.deepEqual(calls.filter(x=>x[0]==='track'),[['track','PageView']]);
+  assert.deepEqual(calls.slice(-2),[['consent','revoke'],['consent','grant']]);
+  assert.equal(w.document.cookie,'');
   d.window.close();
 });
 

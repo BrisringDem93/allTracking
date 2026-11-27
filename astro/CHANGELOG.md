@@ -2,6 +2,10 @@
 
 Formato basato su [Keep a Changelog](https://keepachangelog.com/it/). Versioni del solo pacchetto Astro, indipendenti da quelle del plugin WordPress (vedi `../CHANGELOG.md`).
 
+## [0.2.3] — Ciclo consenso GTM
+
+- GTM parte una volta con default negato e notifica `alltracking_consent_update` sul primo stato e sui cambi effettivi. Verificare i trigger prima dell'upgrade; esempio Meta per Astro senza relay WordPress in `gtm/meta-pageview.html`.
+
 ## [0.2.2] - 2026-11-24 — Audit: form con ClientRouter, ricevute, guard e editor
 
 ### Corretto

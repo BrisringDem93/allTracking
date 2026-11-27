@@ -12,12 +12,24 @@ declare global {
   }
 }
 
+const gtmClients = new WeakMap<Document, ReturnType<typeof trackingClient>>();
+
 /** Nessun consenso viene salvato qui: la CMP resta l'unica fonte. */
 export function createTracking(w: TrackingWindow, value: unknown, active: () => boolean = () => true) {
   const config = normalizeConfig(value);
+  if (config.enabled && config.mode === 'gtm' && config.gtmId) {
+    const current = gtmClients.get(w.document);
+    if (current) return current;
+  }
+  return trackingClient(w, config, active);
+}
+
+function trackingClient(w: TrackingWindow, config: ReturnType<typeof normalizeConfig>, active: () => boolean) {
   w.nativeConsent?.useCMP(config.cmp,config.ga4Id);
   let attribution: Record<string, string> = {};
-  let gaLoaded = false, metaLoaded = false, gtmLoaded = false;
+  let gaLoaded = false, metaLoaded = false;
+  let lastGTM: ReturnType<typeof normalizeConsent> | undefined;
+  const storage = (analytics: boolean, marketing: boolean) => ({analytics_storage: analytics ? 'granted' : 'denied', ad_storage: marketing ? 'granted' : 'denied', ad_user_data: marketing ? 'granted' : 'denied', ad_personalization: marketing ? 'granted' : 'denied'});
   const page = w.location.origin + w.location.pathname;
   const tag = (src: string) => {
     const script = w.document.createElement('script');
@@ -72,18 +84,25 @@ export function createTracking(w: TrackingWindow, value: unknown, active: () => 
     if (!config.enabled) return;
     // Consent Mode denial alone can still send cookieless pings after load.
     if (config.ga4Id) (w as unknown as Record<string, unknown>)[`ga-disable-${config.ga4Id}`] = !consent.analytics;
-    if (!gtmLoaded && config.mode === 'gtm' && config.gtmId && consent.analytics && consent.marketing) {
-      google('consent', 'default', {analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied'});
-      google('consent', 'update', {analytics_storage: 'granted', ad_storage: 'granted', ad_user_data: 'granted', ad_personalization: 'granted'});
-      w.dataLayer!.push({'gtm.start': Date.now(), event: 'gtm.js'});
-      tag(`https://www.googletagmanager.com/gtm.js?id=${config.gtmId}`);
-      gtmLoaded = true;
+    if (config.mode === 'gtm') {
+      if (!config.gtmId || (!lastGTM && !active())) return;
+      if (lastGTM?.analytics === consent.analytics && lastGTM.marketing === consent.marketing) return;
+      const first = !lastGTM;
+      lastGTM = consent;
+      if (first) {
+        google('consent', 'default', storage(false, false));
+        w.dataLayer!.push({'gtm.start': Date.now(), event: 'gtm.js'});
+      }
+      google('consent', 'update', storage(consent.analytics, consent.marketing));
+      w.dataLayer!.push({event:'alltracking_consent_update', analytics:consent.analytics, marketing:consent.marketing});
+      if (first) tag(`https://www.googletagmanager.com/gtm.js?id=${config.gtmId}`);
+      return;
     }
-    if (gaLoaded || gtmLoaded) google('consent', 'update', {analytics_storage: consent.analytics ? 'granted' : 'denied', ad_storage: consent.marketing ? 'granted' : 'denied', ad_user_data: consent.marketing ? 'granted' : 'denied', ad_personalization: consent.marketing ? 'granted' : 'denied'});
+    if (gaLoaded) google('consent', 'update', storage(consent.analytics, consent.marketing));
     if (metaLoaded) w.fbq?.('consent', consent.marketing ? 'grant' : 'revoke');
     if (!gaLoaded && consent.analytics && config.mode === 'direct' && config.ga4Id) {
-      google('consent', 'default', {analytics_storage: 'denied', ad_storage: 'denied', ad_user_data: 'denied', ad_personalization: 'denied'});
-      google('consent', 'update', {analytics_storage: 'granted', ad_storage: consent.marketing ? 'granted' : 'denied', ad_user_data: consent.marketing ? 'granted' : 'denied', ad_personalization: consent.marketing ? 'granted' : 'denied'});
+      google('consent', 'default', storage(false, false));
+      google('consent', 'update', storage(true, consent.marketing));
       google('js', new Date());
       google('config', config.ga4Id, {send_page_view: false, allow_google_signals: false, page_location: page, page_referrer: ''});
       google('event', 'page_view', {page_location: page, page_referrer: ''});
@@ -107,7 +126,6 @@ export function createTracking(w: TrackingWindow, value: unknown, active: () => 
   };
   for (const event of ['alltracking:consent', 'CookiebotOnConsentReady', 'CookiebotOnAccept', 'CookiebotOnDecline', 'iubenda:consent']) w.addEventListener(event, sync);
   w.document.addEventListener('submit', sync, true);
-  sync();
   const seen = new Set<string>();
   const confirm = (value: unknown, submittedConsent: unknown) => {
     const result = record(value), server = record(result.tracking);
@@ -123,5 +141,8 @@ export function createTracking(w: TrackingWindow, value: unknown, active: () => 
     if (analytics && gaLoaded && server.serverGA4 !== true) google('event', 'generate_lead', {event_id: result.eventId, page_location: page, page_referrer: ''});
     if (marketing && metaLoaded) w.fbq?.('track', 'Lead', {}, {eventID: result.eventId});
   };
-  return {payload, confirm};
+  const tracker = {payload, confirm};
+  if (config.enabled && config.mode === 'gtm' && config.gtmId && active()) gtmClients.set(w.document, tracker);
+  sync();
+  return tracker;
 }

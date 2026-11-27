@@ -1,0 +1,37 @@
+<script>
+(function (w, d) {
+  var pixel = 'REPLACE_WITH_PIXEL_ID';
+  var fbq = w.fbq;
+  function granted() { return w.nativeConsent && w.nativeConsent.get().marketing === true; }
+  if (fbq) {
+    if (fbq.allTrackingPixel === pixel && fbq.allTrackingSync) fbq.allTrackingSync();
+    return;
+  }
+  if (!granted() || w._fbq || !/^\d{5,25}$/.test(pixel)) return;
+  fbq = w.fbq = w._fbq = function () {
+    if (fbq.callMethod) fbq.callMethod.apply(fbq, arguments);
+    else fbq.queue.push(arguments);
+  };
+  fbq.push = fbq; fbq.loaded = true; fbq.version = '2.0'; fbq.queue = [];
+  fbq.allTrackingPixel = pixel;
+  var initialized = false;
+  var script = d.createElement('script');
+  script.async = true; script.src = 'https://connect.facebook.net/en_US/fbevents.js';
+  script.onload = function () {
+    fbq.allTrackingSync = function () {
+      if (!granted()) {
+        if (initialized) fbq('consent', 'revoke');
+        return;
+      }
+      fbq('consent', 'grant');
+      if (initialized) return;
+      initialized = true;
+      fbq('set', 'autoConfig', false, pixel);
+      fbq('init', pixel);
+      fbq('track', 'PageView');
+    };
+    fbq.allTrackingSync();
+  };
+  d.head.appendChild(script);
+})(window, document);
+</script>

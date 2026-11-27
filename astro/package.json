@@ -1,10 +1,10 @@
 {
   "name": "@alltracking/astro",
-  "version": "0.2.2",
+  "version": "0.2.3",
   "description": "Consent-first allTracking integration for Astro",
   "type": "module",
   "license": "UNLICENSED",
-  "files": ["dist", "src/ConsentPanel.astro", "src/TrackingSettings.astro", "src/TrackingHead.astro", "README.md"],
+  "files": ["dist", "gtm/meta-pageview.html", "src/ConsentPanel.astro", "src/TrackingSettings.astro", "src/TrackingHead.astro", "README.md"],
   "exports": {
     ".": {"types": "./dist/index.d.ts", "default": "./dist/index.js"},
     "./client": {"types": "./dist/runtime.d.ts", "default": "./dist/runtime.js"},

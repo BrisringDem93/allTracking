@@ -19,7 +19,7 @@ npm pack --ignore-scripts
 Nel **progetto Astro destinatario**, installare il tarball prodotto:
 
 ```sh
-npm install /percorso/allTracking/astro/alltracking-astro-0.2.2.tgz
+npm install /percorso/allTracking/astro/alltracking-astro-0.2.3.tgz
 ```
 
 Richiede Astro `^7.2.0`; la fixture verifica **Astro 7.2.0**, Node 22.22.1 e npm 10.9.4. Il pacchetto dichiara Node >=22.18.0: rispettare anche i requisiti della versione Astro scelta (versioni più recenti possono richiedere Node più recente). Non installare la radice Git come dipendenza npm: quella contiene WordPress.
@@ -258,7 +258,11 @@ Il browser emette solo con configurazione attiva, `formEvents:true`, risposta co
 |---|---|---|
 | Direct GA4 | Dopo analytics, senza query/referrer nel payload proprio | `generate_lead`, salvo `result.tracking.serverGA4 === true` |
 | Direct Meta | Dopo marketing | Pixel `Lead`, `eventID` uguale all'eventuale CAPI server |
-| GTM | Contenitore solo dopo **entrambi** i consensi | `dataLayer` `generate_lead` con `event_id`, mai tag diretti duplicati |
+| GTM | Un contenitore per documento attivo, anche senza consenso | `dataLayer` `generate_lead` con `event_id`, mai tag diretti duplicati |
+
+**Migrazione GTM 0.2.3:** verificare il contenitore prima di aggiornare il sito. Il download di GTM avviene anche a consenso negato: non autorizza i tag al suo interno. L'ordine è `consent default` (quattro dinieghi), `gtm.js`, `consent update`, poi `{event:'alltracking_consent_update', analytics, marketing}` (booleani). L'ultimo paio si ripete solo al cambio effettivo, revoca inclusa. I booleani dell'evento sono uno snapshot, non un permesso: GTM può riprodurre una coda grant → revoca dopo il download. Ogni tag opzionale deve verificare anche la categoria **corrente** con `window.nativeConsent?.get()` immediatamente prima dell'invio (e di nuovo dopo caricamenti asincroni); API assente o categoria non `true` = nessun invio. Prima dell'upgrade provare in Preview anche grant → revoca mentre `gtm.js` è in attesa: al rilascio nessuna richiesta vendor. Non attivare tag opzionali su Initialization, All Pages o semplice submit. Per GA4 subordinare i tag analytics al consenso analytics; `generate_lead` resta una conferma separata con entrambi i consensi.
+
+Per il PageView Meta usare il sorgente Custom HTML [`gtm/meta-pageview.html`](gtm/meta-pageview.html) **al posto** del vecchio tag, non in aggiunta. Sostituire il segnaposto con l'ID numerico verificato. Trigger Custom Event: `alltracking_consent_update`, anche su diniego (il corpo deve poter revocare); nessun trigger di inizializzazione. Il tag rilegge il consenso marketing nativo, non sostituisce Pixel esistenti, inizializza un solo PageView per documento e non chiama endpoint WP. Non è un tag Lead. Rivedere anche tutti gli altri tag e verificare in Preview prima di qualsiasi attivazione: Consent Mode da solo non impedisce l'esecuzione di Custom HTML o i ping senza cookie.
 
 Se il backend ha tentato GA4 Measurement Protocol, `serverGA4:true` deve restare vero anche con timeout (consegna incerta), evitando un secondo invio browser. Non impostarlo solo perché il flag è configurato: senza vero clientId `_ga`, consenso e credenziali server l'evento resta del browser. Per CAPI usare lo stesso eventId e marketing verificato. In GA4 disabilitare eventi automatici dei moduli/Misurazione avanzata; in GTM usare solo `generate_lead` confermato. Non installare snippet GA/Meta/GTM/allTracking duplicati. La configurazione interna dei provider resta fuori dal controllo del pacchetto.
 
